@@ -1,4 +1,4 @@
-export type NodeType = 'trigger' | 'llm' | 'http' | 'condition' | 'transform' | 'output';
+export type NodeType = 'trigger' | 'llm' | 'http' | 'condition' | 'switch' | 'transform' | 'output';
 
 export interface WorkflowNode {
     id: string;

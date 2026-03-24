@@ -4,8 +4,11 @@ import { LLMConfig, LLMResponse } from "../types/llm.types";
 import { LLMProviderFactory } from "../llm/LLMProviderFactory";
 import { ChatMemoryManager } from "../llm/ChatMemoryManager";
 import { isLLMNodeConfig } from '../utils/guards';
+import { ExpressionResolver } from "../engine/ExpressionResolver";
 
 export class LLMNode implements NodeExecutor {
+    private resolver = new ExpressionResolver();
+
     constructor(private memoryManager: ChatMemoryManager) {}
 
     async execute(node: WorkflowNode, context: ExecutionContext): Promise<LLMResponse> {
@@ -26,7 +29,7 @@ export class LLMNode implements NodeExecutor {
             });
         }
 
-        const resolvedPrompt = this.resolveTemplate(config.userPrompt, context);
+        const resolvedPrompt = this.resolver.resolveTemplate(config.userPrompt, context);
 
         this.memoryManager.addMessage(context.executionId, {
             role: 'user',
@@ -46,12 +49,5 @@ export class LLMNode implements NodeExecutor {
         });
 
         return response;
-    }
-
-    private resolveTemplate(template: string, context: ExecutionContext): string {
-        return template.replace(/\{\{\s*nodes\.(\S+?)\.output\s*\}\}/g, (_, nodeId) => {
-            const value = context.variables[nodeId];
-            return value ? JSON.stringify(value) : `[missing: ${nodeId}]`;
-        });
     }
 }

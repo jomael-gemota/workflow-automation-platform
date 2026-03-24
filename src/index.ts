@@ -23,12 +23,18 @@ import crypto from 'crypto';
 import sensible from '@fastify/sensible';
 import { registerErrorHandler } from './errors/errorHandler';
 
+import { ConditionNode } from './nodes/ConditionNode';
+import { SwitchNode } from './nodes/SwitchNode';
+import { runSeeds } from './db/seeds';
+
 async function bootstrap() {
     // 1. Engine setup
     const registry = new NodeExecutorRegistry();
     const memoryManager = new ChatMemoryManager();
     registry.register('http', new HttpNode());
     registry.register('llm', new LLMNode(memoryManager));
+	registry.register('condition', new ConditionNode());
+	registry.register('switch', new SwitchNode());
     const runner = new WorkflowRunner(registry);
 
     // 2. Repositories & services
@@ -36,7 +42,7 @@ async function bootstrap() {
     const executionRepo = new ExecutionRepository();
     const workflowService = new WorkflowService(runner, workflowRepo, executionRepo);
 
-	seedSampleWorkflow(workflowRepo);
+	runSeeds(workflowRepo);
 
     // 3. Seed a default API key on first run if none exist
     const db = getDatabase();
@@ -71,49 +77,6 @@ async function bootstrap() {
     const PORT = Number(process.env.PORT ?? 3000);
     await fastify.listen({ port: PORT, host: '0.0.0.0' });
     console.log(`🚀 Platform running at http://localhost:${PORT}`);
-}
-
-function seedSampleWorkflow(workflowRepo: WorkflowRepository): void {
-	const existing = workflowRepo.findById('workflow-002');
-	if (existing) {
-		console.log('📋 Sample workflow already exists in DB, skipping seed.');
-		return;
-	}
-
-	workflowRepo.save({
-		id: 'workflow-002',
-		name: 'Fetch + Summarize Workflow',
-		version: 1,
-		entryNodeId: 'node-1',
-		nodes: [
-			{
-				id: 'node-1',
-				type: 'http',
-				name: 'Fetch a fact',
-				config: {
-					url: 'https://uselessfacts.jsph.pl/api/v2/facts/random',
-					method: 'GET',
-				},
-				next: ['node-2'],
-			},
-			{
-				id: 'node-2',
-				type: 'llm',
-				name: 'Summarize the fact',
-				config: {
-					provider: 'openai',
-					model: 'gpt-4o-mini',
-					temperature: 0.7,
-					maxTokens: 200,
-					systemPrompt: 'You are a helpful assistant that explains facts in simple terms.',
-					userPrompt: 'Explain this fact in one friendly sentence: {{ nodes.node-1.output }}',
-				},
-				next: [],
-			},
-		],
-	});
-
-	console.log('✅ Sample workflow seeded successfully.');
 }
 
 bootstrap().catch(err => {
