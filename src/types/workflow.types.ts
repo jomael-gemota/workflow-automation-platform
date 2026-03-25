@@ -6,6 +6,9 @@ export interface WorkflowNode {
     name: string;
     config: Record<string, unknown>;
     next: string[];
+    retries?: number;
+    retryDelayMs?: number;
+    timeoutMs?: number;
 }
 
 export interface WorkflowDefinition {
@@ -14,6 +17,7 @@ export interface WorkflowDefinition {
     version: number;
     nodes: WorkflowNode[];
     entryNodeId: string;
+    schedule?: string;
 }
 
 export interface ExecutionContext {

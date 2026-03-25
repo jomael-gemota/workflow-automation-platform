@@ -15,7 +15,7 @@ export function createHmacVerifier(workflowRepo: WorkflowRepository) {
             throw UnauthorizedError();
         }
 
-        const secret = workflowRepo.findWebhookSecret(workflowId);
+        const secret = await workflowRepo.findWebhookSecret(workflowId);
         if (!secret) throw UnauthorizedError();
 
         const rawBody = JSON.stringify(request.body);

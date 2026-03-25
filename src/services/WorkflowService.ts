@@ -1,8 +1,9 @@
+import crypto from 'crypto';
 import { WorkflowRunner } from '../engine/WorkflowRunner';
 import { WorkflowRepository } from '../repositories/WorkflowRepository';
 import { ExecutionRepository } from '../repositories/ExecutionRepository';
 import { ExecutionSummary } from '../types/api.types';
-import { NodeResult } from '../types/workflow.types';
+import { getWorkflowQueue } from '../queue/WorkflowQueue';
 
 export class WorkflowService {
     constructor(
@@ -11,35 +12,44 @@ export class WorkflowService {
         private executionRepo: ExecutionRepository
     ) {}
 
-    async trigger(workflowId: string, input: Record<string, unknown>): Promise<ExecutionSummary> {
-        const workflow = this.workflowRepo.findById(workflowId);
+    async trigger(
+        workflowId: string,
+        input: Record<string, unknown>,
+        triggeredBy: 'api' | 'webhook' | 'replay' | 'manual' = 'api'
+    ): Promise<ExecutionSummary> {
+        const workflow = await this.workflowRepo.findById(workflowId);
         if (!workflow) throw new Error(`Workflow ${workflowId} not found`);
 
         const startedAt = new Date();
-        const { executionId, results } = await this.runner.run(workflow, input);
-        const completedAt = new Date();
+        const executionId = crypto.randomUUID();
 
-        const status = this.deriveStatus(results);
-
-        const summary: ExecutionSummary = {
+        await this.executionRepo.createPending(
             executionId,
             workflowId,
-            status,
-            startedAt,
-            completedAt,
-            results,
-        };
+            workflow.version,
+            input,
+            triggeredBy
+        );
 
-        this.executionRepo.save(summary);
-        return summary;
+        const queue = getWorkflowQueue();
+        await queue.add('run', { executionId, workflowId, input, triggeredBy });
+
+        return {
+            executionId,
+            workflowId,
+            status: 'pending' as const,
+            startedAt,
+            completedAt: startedAt,
+            results: [],
+        };
     }
 
-    private deriveStatus(results: NodeResult[]): ExecutionSummary['status'] {
-        const hasFailure = results.some(r => r.status === 'failure');
-        const hasSuccess = results.some(r => r.status === 'success');
+    async replay(executionId: string): Promise<ExecutionSummary> {
+        const original = await this.executionRepo.findInput(executionId);
+        if (!original) throw new Error(`Execution ${executionId} not found`);
 
-        if (hasFailure && hasSuccess) return 'partial';
-        if (hasFailure) return 'failure';
-        return 'success';
+        const { input, workflowId } = original as { input: Record<string, unknown>; workflowId: string };
+
+        return this.trigger(workflowId, input, 'replay');
     }
 }

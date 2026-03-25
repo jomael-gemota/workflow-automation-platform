@@ -107,4 +107,16 @@ export async function workflowRoutes(
             }
         }
     );
+
+    fastify.get<{ Params: { id: string } }>(
+        '/workflows/:id/versions',
+        { preHandler: apiKeyAuth },
+        async (request, reply) => {
+            const workflow = await workflowRepo.findById(request.params.id);
+            if (!workflow) throw NotFoundError(`Workflow ${request.params.id}`);
+
+            const versions = await workflowRepo.findVersionHistory(request.params.id);
+            return reply.code(200).send({ workflowId: request.params.id, versions });
+        }
+    );
 }

@@ -2,10 +2,13 @@ import { z } from 'zod';
 
 export const WorkflowNodeSchema = z.object({
     id: z.string().min(1),
-    type: z.enum(['trigger', 'llm', 'http', 'condition', 'transform', 'output']),
+    type: z.enum(['trigger', 'llm', 'http', 'condition', 'switch', 'transform', 'output']),
     name: z.string().min(1),
     config: z.record(z.string(), z.unknown()),
     next: z.array(z.string()),
+    retries: z.number().int().min(0).max(5).optional(),
+    retryDelayMs: z.number().int().min(0).optional(),
+    timeoutMs: z.number().int().min(100).optional(),
 });
 
 export const WorkflowDefinitionSchema = z.object({
@@ -14,6 +17,7 @@ export const WorkflowDefinitionSchema = z.object({
     version: z.number().int().positive(),
     entryNodeId: z.string().min(1),
     nodes: z.array(WorkflowNodeSchema).min(1, 'Workflow must have at least one node'),
+    schedule: z.string().optional(),
 });
 
 export const TriggerWorkflowSchema = z.object({

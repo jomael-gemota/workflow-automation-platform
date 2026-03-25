@@ -1,119 +1,111 @@
-import { getDatabase } from "../db/database";
-import { WorkflowDefinition } from "../types/workflow.types";
-import { PaginatedResponse } from "../types/api.types";
 import crypto from 'crypto';
-
-interface WorkflowRow {
-    id: string;
-    name: string;
-    version: number;
-    definition: string;
-    webhook_secret: string;
-    created_at: string;
-    updated_at: string;
-}
+import { WorkflowModel } from '../db/models/WorkflowModel';
+import { WorkflowVersionModel } from '../db/models/WorkflowVersionModel';
+import { WorkflowDefinition } from '../types/workflow.types';
+import { PaginatedResponse } from '../types/api.types';
 
 export class WorkflowRepository {
-    private db = getDatabase();
 
-    create(workflow: WorkflowDefinition): { workflow: WorkflowDefinition; webhookSecret: string } {
+    async create(
+        workflow: WorkflowDefinition
+    ): Promise<{ workflow: WorkflowDefinition; webhookSecret: string }> {
         const webhookSecret = crypto.randomBytes(32).toString('hex');
 
-        this.db.prepare(`
-            INSERT INTO workflows (id, name, version, definition, webhook_secret)
-            VALUES (@id, @name, @version, @definition, @webhookSecret)
-        `).run({
-            id: workflow.id,
+        await WorkflowModel.create({
+            workflowId: workflow.id,
             name: workflow.name,
             version: workflow.version,
-            definition: JSON.stringify(workflow),
+            definition: workflow,
             webhookSecret,
         });
 
         return { workflow, webhookSecret };
     }
 
-    update(id: string, updates: Partial<WorkflowDefinition>): WorkflowDefinition | null {
-        const existing = this.findById(id);
+    async update(
+        id: string,
+        updates: Partial<WorkflowDefinition>
+    ): Promise<WorkflowDefinition | null> {
+        const existing = await WorkflowModel.findOne({ workflowId: id });
         if (!existing) return null;
 
+        await WorkflowVersionModel.create({
+            workflowId: id,
+            version: existing.version,
+            definition: existing.definition,
+        });
+
         const updated: WorkflowDefinition = {
-            ...existing,
+            ...existing.definition,
             ...updates,
             id,
-            version: existing.version + 1
+            version: existing.version + 1,
         };
 
-        this.db.prepare(`
-            UPDATE workflows
-            SET name = @name,
-                version = @version,
-                definition = @definition,
-                updated_at = datetime('now)
-            WHERE id = @id
-        `).run({
-            id,
-            name: updated.name,
-            version: updated.version,
-            definition: JSON.stringify(updated),
-        });
+        await WorkflowModel.updateOne(
+            { workflowId: id },
+            {
+                $set: {
+                name: updated.name,
+                version: updated.version,
+                definition: updated,
+                },
+            }
+        );
 
         return updated;
     }
 
-    delete(id: string): boolean {
-        const result = this.db
-            .prepare('DELETE FROM workflows WHERE id = ?')
-            .run(id);
-        return result.changes > 0;
+    async delete(id: string): Promise<boolean> {
+        const result = await WorkflowModel.deleteOne({ workflowId: id });
+        return result.deletedCount > 0;
     }
 
-    findById(id: string): WorkflowDefinition | null {
-        const row = this.db
-            .prepare('SELECT * FROM workflows WHERE id = ?')
-            .get(id) as WorkflowRow | undefined;
-
-        if (!row) return null;
-        return JSON.parse(row.definition) as WorkflowDefinition;
+    async findById(id: string): Promise<WorkflowDefinition | null> {
+        const doc = await WorkflowModel.findOne({ workflowId: id });
+        return doc ? (doc.definition as WorkflowDefinition) : null;
     }
 
-    findWebhookSecret(id: string): string | null {
-        const row = this.db
-            .prepare('SELECT webhook_secret FROM workflows WHERE id = ?')
-            .get(id) as Pick<WorkflowRow, 'webhook_secret'> | undefined;
-
-        return row?.webhook_secret ?? null;
+    async findWebhookSecret(id: string): Promise<string | null> {
+        const doc = await WorkflowModel.findOne({ workflowId: id }).select('webhookSecret');
+        return doc?.webhookSecret ?? null;
     }
 
-    findAll(limit: number, cursor?: string): PaginatedResponse<WorkflowDefinition> {
-        const fetchLimit = limit + 1;
+    async findVersionHistory(id: string): Promise<WorkflowDefinition[]> {
+        const versions = await WorkflowVersionModel
+        .find({ workflowId: id })
+        .sort({ version: -1 });
+        return versions.map(v => v.definition as WorkflowDefinition);
+    }
 
-        const rows = cursor
-            ? this.db.prepare(`
-                SELECT * FROM workflows
-                WHERE created_at < ?
-                ORDER BY created_at DESC
-                LIMIT ?
-            `).all(cursor, fetchLimit) as WorkflowRow[]
-        : this.db.prepare(`
-                SELECT * FROM workflows
-                ORDER BY created_at DESC
-                LIMIT ?
-            `).all(fetchLimit) as WorkflowRow[];
+    async findAll(
+        limit: number,
+        cursor?: string
+    ): Promise<PaginatedResponse<WorkflowDefinition>> {
+        const query = cursor
+            ? { createdAt: { $lt: new Date(cursor) } }
+            : {};
 
-        const hasMore = rows.length > limit;
-        const data = rows
+        const docs = await WorkflowModel
+            .find(query)
+            .sort({ createdAt: -1 })
+            .limit(limit + 1);
+
+        const hasMore = docs.length > limit;
+        const data = docs
             .slice(0, limit)
-            .map(row => JSON.parse(row.definition) as WorkflowDefinition);
+            .map(doc => doc.definition as WorkflowDefinition);
 
-        const nextCursor = hasMore ? rows[limit - 1].created_at : null;
+        const nextCursor = hasMore
+            ? docs[limit - 1].createdAt.toISOString()
+            : null;
 
         return { data, pagination: { hasMore, nextCursor, limit } };
     }
 
-    save(workflow: WorkflowDefinition): void {
-        const existing = this.findById(workflow.id);
+    async save(workflow: WorkflowDefinition): Promise<void> {
+        const existing = await this.findById(workflow.id);
         if (existing) return;
-        this.create(workflow);
+        await this.create(workflow);
     }
 }

@@ -1,4 +1,5 @@
-import { WorkflowDefinition, ExecutionContext, NodeResult } from '../types/workflow.types';
+import crypto from 'crypto';
+import { WorkflowDefinition, WorkflowNode, ExecutionContext, NodeResult } from '../types/workflow.types';
 import { NodeExecutorRegistry } from './NodeExecutorRegistry';
 import { WorkflowExecutionResult } from '../types/workflow.types';
 import { ConditionNodeOutput } from '../nodes/ConditionNode';
@@ -39,7 +40,7 @@ export class WorkflowRunner {
         const start = Date.now();
 
         try {
-            const output = await executor.execute(node, context);
+            const output = await this.executeWithRetryAndTimeout(node, context, executor);
             context.variables[nodeId] = output;
 
             results.push({
@@ -67,6 +68,52 @@ export class WorkflowRunner {
                 durationMs: Date.now() - start,
             });
         }
+    }
+
+    private async executeWithRetryAndTimeout(
+        node: WorkflowNode,
+        context: ExecutionContext,
+        executor: { execute(node: WorkflowNode, context: ExecutionContext): Promise<unknown> }
+    ): Promise<unknown> {
+        const maxAttempts = (node.retries ?? 0) + 1;
+        const retryDelayMs = node.retryDelayMs ?? 0;
+        const timeoutMs = node.timeoutMs;
+
+        let lastError: Error = new Error('Unknown error');
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return await this.executeWithTimeout(
+                    executor.execute(node, context),
+                    timeoutMs,
+                    node.id
+                );
+            } catch (err: unknown) {
+                lastError = err instanceof Error ? err : new Error(String(err));
+                if (attempt < maxAttempts && retryDelayMs > 0) {
+                    await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+                }
+            }
+        }
+
+        throw lastError;
+    }
+
+    private executeWithTimeout(
+        promise: Promise<unknown>,
+        timeoutMs: number | undefined,
+        nodeId: string
+    ): Promise<unknown> {
+        if (!timeoutMs) return promise;
+
+        const timeout = new Promise<never>((_, reject) => {
+            const timer = setTimeout(() => {
+                reject(new Error(`Node "${nodeId}" timed out after ${timeoutMs}ms`));
+            }, timeoutMs);
+            promise.finally(() => clearTimeout(timer));
+        });
+
+        return Promise.race([promise, timeout]);
     }
 
     private resolveNextNodes(

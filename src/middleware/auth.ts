@@ -1,16 +1,10 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
-import { getDatabase } from '../db/database';
+import { ApiKeyModel } from '../db/models/ApiKeyModel';
 import { UnauthorizedError, ForbiddenError } from '../errors/ApiError';
-
-interface ApiKeyRow {
-    id: string;
-    key: string;
-    name: string;
-}
 
 export async function apiKeyAuth(
     request: FastifyRequest,
-    reply: FastifyReply
+    _reply: FastifyReply
 ): Promise<void> {
     const apiKey = request.headers['x-api-key'];
 
@@ -18,14 +12,8 @@ export async function apiKeyAuth(
         throw UnauthorizedError();
     }
 
-    const db = getDatabase();
-    const row = db
-        .prepare('SELECT * FROM api_keys WHERE key = ?')
-        .get(apiKey) as ApiKeyRow | undefined;
+    const doc = await ApiKeyModel.findOne({ key: apiKey });
+    if (!doc) throw ForbiddenError();
 
-    if (!row) {
-        throw ForbiddenError();
-    }
-
-    (request as any).apiKey = row;
+    (request as any).apiKey = { id: doc.keyId, key: doc.key, name: doc.name };
 }

@@ -1,89 +1,108 @@
-import { getDatabase } from "../db/database";
-import { ExecutionSummary } from "../types/api.types";
-import { PaginatedResponse } from "../types/api.types";
-
-interface ExecutionRow {
-    id: string;
-    workflow_id: string;
-    status: string;
-    input: string;
-    results: string;
-    started_at: string;
-    completed_at: string;
-}
+import { ExecutionModel, ExecutionStatus } from '../db/models/ExecutionModel';
+import { ExecutionSummary, PaginatedResponse } from '../types/api.types';
+import { NodeResult } from '../types/workflow.types';
 
 export class ExecutionRepository {
-    private db = getDatabase();
 
-    save(summary: ExecutionSummary): void {
-        const stmt = this.db.prepare(`
-            INSERT INTO executions (id, workflow_id, status, input, results, started_at, completed_at) VALUES (@id, @workflowId, @status, @input, @results, @startedAt, @completedAt)
-        `);
-
-        stmt.run({
-            id: summary.executionId,
-            workflowId: summary.workflowId,
-            status: summary.status,
-            input: JSON.stringify(summary.results),
-            results: JSON.stringify(summary.results),
-            startedAt: summary.startedAt.toISOString(),
-            completedAt: summary.completedAt.toISOString(),
+    async createPending(
+        executionId: string,
+        workflowId: string,
+        workflowVersion: number,
+        input: unknown,
+        triggeredBy: 'api' | 'webhook' | 'replay' | 'manual' = 'api'
+    ): Promise<void> {
+        await ExecutionModel.create({
+            executionId,
+            workflowId,
+            workflowVersion,
+            status: 'pending',
+            input,
+            results: [],
+            logs: [],
+            startedAt: new Date(),
+            triggeredBy,
         });
     }
 
-    findById(id: string): ExecutionSummary | null {
-        const row = this.db
-            .prepare('SELECT * FROM executions WHERE id = ?')
-            .get(id) as ExecutionRow | undefined;
-
-        if (!row) return null;
-        return this.rowToSummary(row);
+    async markRunning(executionId: string): Promise<void> {
+        await ExecutionModel.updateOne(
+            { executionId },
+            { $set: { status: 'running' } }
+        );
     }
 
-    findByWorkflowId(workflowId: string): ExecutionSummary[] {
-        const rows = this.db
-        .prepare('SELECT * FROM executions WHERE workflow_id = ? ORDER BY started_at DESC')
-        .all(workflowId) as ExecutionRow[];
+    async complete(
+        executionId: string,
+        status: ExecutionStatus,
+        results: NodeResult[]
+    ): Promise<void> {
+        const logs = results.map(r => ({
+            nodeId: r.nodeId,
+            status: r.status,
+            output: r.output,
+            error: r.error,
+            durationMs: r.durationMs,
+            executedAt: new Date(),
+        }));
 
-        return rows.map(this.rowToSummary);
+        await ExecutionModel.updateOne(
+            { executionId },
+            {
+                $set: {
+                status,
+                results,
+                logs,
+                completedAt: new Date(),
+                },
+            }
+        );
     }
 
-    findByWorkflowIdPaginated(
+    async findById(id: string): Promise<ExecutionSummary | null> {
+        const doc = await ExecutionModel.findOne({ executionId: id });
+        if (!doc) return null;
+        return this.docToSummary(doc);
+    }
+
+    async findInput(executionId: string): Promise<unknown | null> {
+        const doc = await ExecutionModel
+            .findOne({ executionId })
+            .select('input workflowId workflowVersion');
+        if (!doc) return null;
+        return { input: doc.input, workflowId: doc.workflowId };
+    }
+
+    async findByWorkflowIdPaginated(
         workflowId: string,
         limit: number,
         cursor?: string
-    ): PaginatedResponse<ExecutionSummary> {
-        const fetchLimit = limit + 1;
+    ): Promise<PaginatedResponse<ExecutionSummary>> {
+        const query = cursor
+            ? { workflowId, startedAt: { $lt: new Date(cursor) } }
+            : { workflowId };
 
-        const rows = cursor
-            ? this.db.prepare(`
-                SELECT * FROM executions
-                WHERE workflow_id = ? AND started_at < ?
-                ORDER BY started_at DESC
-                LIMIT ?
-              `).all(workflowId, cursor, fetchLimit) as ExecutionRow[]
-            : this.db.prepare(`
-                SELECT * FROM executions
-                WHERE workflow_id = ?
-                ORDER BY started_at DESC
-                LIMIT ?
-              `).all(workflowId, fetchLimit) as ExecutionRow[];
+        const docs = await ExecutionModel
+            .find(query)
+            .sort({ startedAt: -1 })
+            .limit(limit + 1);
 
-        const hasMore = rows.length > limit;
-        const data = rows.slice(0, limit).map(this.rowToSummary);
-        const nextCursor = hasMore ? rows[limit - 1].started_at : null;
+        const hasMore = docs.length > limit;
+        const data = docs.slice(0, limit).map(this.docToSummary);
+        const nextCursor = hasMore
+            ? docs[limit - 1].startedAt.toISOString()
+            : null;
 
         return { data, pagination: { hasMore, nextCursor, limit } };
     }
 
-    private rowToSummary(row: ExecutionRow): ExecutionSummary {
+    private docToSummary(doc: InstanceType<typeof ExecutionModel>): ExecutionSummary {
         return {
-        executionId: row.id,
-        workflowId: row.workflow_id,
-        status: row.status as ExecutionSummary['status'],
-        results: JSON.parse(row.results),
-        startedAt: new Date(row.started_at),
-        completedAt: new Date(row.completed_at),
+            executionId: doc.executionId,
+            workflowId: doc.workflowId,
+            status: doc.status as ExecutionSummary['status'],
+            results: doc.results,
+            startedAt: doc.startedAt,
+            completedAt: doc.completedAt ?? new Date(),
         };
     }
 }

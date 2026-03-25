@@ -16,8 +16,9 @@ import { WorkflowService } from './services/WorkflowService';
 import { workflowRoutes } from './routes/workflows';
 import { executionRoutes } from './routes/executions';
 import { webhookRoutes } from './routes/webhooks';
+import { apiKeyRoutes } from './routes/apiKeys';
 
-import { getDatabase } from './db/database';
+import { connectDatabase } from './db/database';
 import crypto from 'crypto';
 
 import sensible from '@fastify/sensible';
@@ -25,9 +26,18 @@ import { registerErrorHandler } from './errors/errorHandler';
 
 import { ConditionNode } from './nodes/ConditionNode';
 import { SwitchNode } from './nodes/SwitchNode';
+import { TransformNode } from './nodes/TransformNode';
+import { OutputNode } from './nodes/OutputNode';
 import { runSeeds } from './db/seeds';
 
+import { ApiKeyModel } from './db/models/ApiKeyModel';
+import { createWorkflowWorker } from './queue/WorkflowWorker';
+import { WorkflowScheduler } from './scheduler/WorkflowScheduler';
+
 async function bootstrap() {
+
+    await connectDatabase();
+    
     // 1. Engine setup
     const registry = new NodeExecutorRegistry();
     const memoryManager = new ChatMemoryManager();
@@ -35,6 +45,8 @@ async function bootstrap() {
     registry.register('llm', new LLMNode(memoryManager));
 	registry.register('condition', new ConditionNode());
 	registry.register('switch', new SwitchNode());
+    registry.register('transform', new TransformNode());
+    registry.register('output', new OutputNode());
     const runner = new WorkflowRunner(registry);
 
     // 2. Repositories & services
@@ -42,16 +54,25 @@ async function bootstrap() {
     const executionRepo = new ExecutionRepository();
     const workflowService = new WorkflowService(runner, workflowRepo, executionRepo);
 
-	runSeeds(workflowRepo);
+	await runSeeds(workflowRepo);
+
+    // 3. Start background worker
+    createWorkflowWorker(runner, workflowRepo, executionRepo);
+
+    // 4. Start cron scheduler
+    const scheduler = new WorkflowScheduler(workflowRepo, workflowService);
+    await scheduler.start();
 
     // 3. Seed a default API key on first run if none exist
-    const db = getDatabase();
-    const existing = db.prepare('SELECT COUNT(*) as count FROM api_keys').get() as { count: number };
-    if (existing.count === 0) {
-      const defaultKey = `sk-${crypto.randomUUID()}`;
-      db.prepare('INSERT INTO api_keys (id, key, name) VALUES (?, ?, ?)')
-        .run(crypto.randomUUID(), defaultKey, 'default');
-      console.log(`\n🔑 Default API Key generated (save this — shown once):\n   ${defaultKey}\n`);
+    const existingKey = await ApiKeyModel.findOne();
+    if (!existingKey) {
+        const defaultKey = `sk-${crypto.randomUUID()}`;
+        await ApiKeyModel.create({
+        keyId: crypto.randomUUID(),
+        key: defaultKey,
+        name: 'default',
+        });
+        console.log(`\n🔑 Default API Key generated (save this — shown once):\n   ${defaultKey}\n`);
     }
 
     // 4. Fastify server
@@ -67,8 +88,9 @@ async function bootstrap() {
     // 5. Register routes
 	registerErrorHandler(fastify);
     await fastify.register(workflowRoutes, { workflowService, workflowRepo });
-    await fastify.register(executionRoutes, { executionRepo });
+    await fastify.register(executionRoutes, { executionRepo, workflowService });
     await fastify.register(webhookRoutes, { workflowService, workflowRepo });
+    await fastify.register(apiKeyRoutes);
 
     // 6. Health check
     fastify.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
