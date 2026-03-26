@@ -16,7 +16,8 @@ export interface WorkflowDefinition {
     name: string;
     version: number;
     nodes: WorkflowNode[];
-    entryNodeId: string;
+    entryNodeId: string;       // Primary / first entry node (kept for backward compat)
+    entryNodeIds?: string[];   // All parallel entry nodes; overrides entryNodeId when present
     schedule?: string;
 }
 

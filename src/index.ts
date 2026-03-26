@@ -93,7 +93,7 @@ async function bootstrap() {
 
     // 5. Register routes
 	registerErrorHandler(fastify);
-    await fastify.register(workflowRoutes, { workflowService, workflowRepo });
+    await fastify.register(workflowRoutes, { workflowService, workflowRepo, executionRepo, registry });
     await fastify.register(executionRoutes, { executionRepo, workflowService });
     await fastify.register(webhookRoutes, { workflowService, workflowRepo });
     await fastify.register(apiKeyRoutes);

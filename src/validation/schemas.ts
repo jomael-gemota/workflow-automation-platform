@@ -16,6 +16,7 @@ export const WorkflowDefinitionSchema = z.object({
     name: z.string().min(1),
     version: z.number().int().positive(),
     entryNodeId: z.string().min(1),
+    entryNodeIds: z.array(z.string().min(1)).min(1).optional(),
     nodes: z.array(WorkflowNodeSchema).min(1, 'Workflow must have at least one node'),
     schedule: z.string().optional(),
 });
@@ -44,6 +45,7 @@ export const UpdateWorkflowSchema = z.object({
     name: z.string().min(1).optional(),
     nodes: z.array(WorkflowNodeSchema).min(1).optional(),
     entryNodeId: z.string().min(1).optional(),
+    entryNodeIds: z.array(z.string().min(1)).min(1).optional(),
 });
 
 export const CursorPaginationSchema = z.object({
@@ -55,6 +57,10 @@ export const ExecutionQuerySchema = z.object({
     workflowId: z.string().min(1),
     limit: z.coerce.number().int().min(1).max(100).optional().default(20),
     cursor: z.string().optional(),
+});
+
+export const NodeTestSchema = z.object({
+    context: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type TriggerWorkflowInput = z.infer<typeof TriggerWorkflowSchema>;

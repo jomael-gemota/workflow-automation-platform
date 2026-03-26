@@ -25,7 +25,7 @@ export class LLMNode implements NodeExecutor {
         if (config.systemPrompt && memory.messages.length === 0) {
             this.memoryManager.addMessage(context.executionId, {
                 role: 'system',
-                content: config.systemPrompt,
+                content: this.resolver.resolveTemplate(config.systemPrompt, context),
             });
         }
 

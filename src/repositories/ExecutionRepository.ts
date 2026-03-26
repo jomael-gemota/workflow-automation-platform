@@ -1,6 +1,16 @@
+import crypto from 'crypto';
 import { ExecutionModel, ExecutionStatus } from '../db/models/ExecutionModel';
 import { ExecutionSummary, PaginatedResponse } from '../types/api.types';
 import { NodeResult } from '../types/workflow.types';
+
+export interface NodeTestResult {
+    nodeId: string;
+    status: 'success' | 'failure';
+    output: unknown;
+    error?: string;
+    durationMs: number;
+    ranAt: Date;
+}
 
 export class ExecutionRepository {
 
@@ -93,6 +103,57 @@ export class ExecutionRepository {
             : null;
 
         return { data, pagination: { hasMore, nextCursor, limit } };
+    }
+
+    async saveNodeTestResult(
+        workflowId: string,
+        nodeId: string,
+        result: NodeTestResult
+    ): Promise<void> {
+        // Upsert: keep only the most recent test result per (workflowId, nodeId) pair
+        await ExecutionModel.findOneAndUpdate(
+            { workflowId, testNodeId: nodeId, triggeredBy: 'node-test' },
+            {
+                $set: {
+                    executionId: crypto.randomUUID(),
+                    workflowId,
+                    workflowVersion: 0,
+                    status: result.status,
+                    input: null,
+                    results: [result],
+                    logs: [{
+                        nodeId,
+                        status: result.status,
+                        output: result.output,
+                        error: result.error,
+                        durationMs: result.durationMs,
+                        executedAt: result.ranAt,
+                    }],
+                    startedAt: result.ranAt,
+                    completedAt: result.ranAt,
+                    triggeredBy: 'node-test',
+                    testNodeId: nodeId,
+                },
+            },
+            { upsert: true }
+        );
+    }
+
+    async findAllNodeTestResults(
+        workflowId: string
+    ): Promise<Record<string, NodeTestResult>> {
+        const docs = await ExecutionModel.find({
+            workflowId,
+            triggeredBy: 'node-test',
+        }).sort({ startedAt: -1 });
+
+        const map: Record<string, NodeTestResult> = {};
+        for (const doc of docs) {
+            if (!doc.testNodeId || map[doc.testNodeId]) continue;
+            const r = (doc.results as NodeTestResult[])[0];
+            if (r) map[doc.testNodeId] = r;
+        }
+        return map;
     }
 
     private docToSummary(doc: InstanceType<typeof ExecutionModel>): ExecutionSummary {

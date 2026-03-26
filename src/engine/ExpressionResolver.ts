@@ -95,8 +95,15 @@ export class ExpressionResolver {
 
     resolveTemplate(template: string, context: ExecutionContext): string {
         return template.replace(/\{\{\s*(.+?)\s*\}\}/g, (_, expr) => {
-            const value = this.resolve(expr.trim(), context);
-            return value !== undefined && value !== null ? String(value) : `[missing: ${expr}]`;
+            try {
+                const value = this.resolve(expr.trim(), context);
+                if (value === undefined || value === null) return `[missing: ${expr.trim()}]`;
+                if (typeof value === 'object') return JSON.stringify(value);
+                return String(value);
+            } catch {
+                // Node not yet in context (e.g. testing in isolation) — emit a readable placeholder
+                return `[missing: ${expr.trim()}]`;
+            }
         });
     }
 }

@@ -24,6 +24,7 @@ export interface WorkflowDefinition {
   version: number;
   nodes: WorkflowNode[];
   entryNodeId: string;
+  entryNodeIds?: string[];
   schedule?: string;
 }
 
@@ -51,4 +52,13 @@ export interface PaginatedResponse<T> {
     nextCursor: string | null;
     limit: number;
   };
+}
+
+export interface NodeTestResult {
+  nodeId: string;
+  status: 'success' | 'failure';
+  output: unknown;
+  error?: string;
+  durationMs: number;
+  ranAt: string;
 }

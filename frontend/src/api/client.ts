@@ -2,6 +2,7 @@ import type {
   WorkflowDefinition,
   ExecutionSummary,
   PaginatedResponse,
+  NodeTestResult,
 } from '../types/workflow';
 
 const BASE = '/api';
@@ -58,7 +59,7 @@ export function createWorkflow(
 
 export function updateWorkflow(
   id: string,
-  body: Partial<Pick<WorkflowDefinition, 'name' | 'nodes' | 'entryNodeId' | 'schedule'>>
+  body: Partial<Pick<WorkflowDefinition, 'name' | 'nodes' | 'entryNodeId' | 'entryNodeIds' | 'schedule'>>
 ) {
   return request<WorkflowDefinition>(`/workflows/${id}`, {
     method: 'PUT',
@@ -80,6 +81,25 @@ export function triggerWorkflow(
     method: 'POST',
     body: JSON.stringify({ workflowId, input }),
   });
+}
+
+// ── Node testing ─────────────────────────────────────────────
+
+export function testNode(
+  workflowId: string,
+  nodeId: string,
+  context?: Record<string, unknown>
+) {
+  return request<NodeTestResult>(
+    `/workflows/${workflowId}/nodes/${nodeId}/test`,
+    { method: 'POST', body: JSON.stringify({ context }) }
+  );
+}
+
+export function getNodeTestResults(workflowId: string) {
+  return request<Record<string, NodeTestResult>>(
+    `/workflows/${workflowId}/node-test-results`
+  );
 }
 
 // ── Executions ───────────────────────────────────────────────

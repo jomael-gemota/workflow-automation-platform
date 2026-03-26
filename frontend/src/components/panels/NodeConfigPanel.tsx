@@ -1,10 +1,12 @@
-import { Settings2, Star, Braces } from 'lucide-react';
+import { Settings2, Star, Braces, Play, Loader2, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Clock } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useWorkflowStore } from '../../store/workflowStore';
 import type { CanvasNode } from '../../store/workflowStore';
 import { Select } from '../ui/Input';
+import { useTestNode, useNodeTestResults } from '../../hooks/useNodeTest';
+import type { NodeTestResult } from '../../types/workflow';
 
-// ── Output field catalogue (human-friendly labels for each node type) ─────────
+// ── Output field catalogue (human-friendly labels per node type) ──────────────
 
 interface OutputField {
   key: string;
@@ -12,9 +14,7 @@ interface OutputField {
 }
 
 const NODE_OUTPUT_FIELDS: Record<string, OutputField[]> = {
-  trigger: [
-    { key: 'payload', label: 'Trigger payload (full input)' },
-  ],
+  trigger: [{ key: 'payload', label: 'Trigger payload (full input)' }],
   http: [
     { key: 'status', label: 'HTTP status code' },
     { key: 'body', label: 'Full response body (JSON)' },
@@ -35,27 +35,57 @@ const NODE_OUTPUT_FIELDS: Record<string, OutputField[]> = {
     { key: 'matchedCase', label: 'Matched case label' },
     { key: 'nextNodeId', label: 'Next node ID' },
   ],
-  transform: [
-    { key: '…', label: 'Use the key names you defined in Mappings' },
-  ],
-  output: [
-    { key: 'value', label: 'Resolved output value' },
-  ],
+  transform: [{ key: '…', label: 'Use the key names you defined in Mappings' }],
+  output: [{ key: 'value', label: 'Resolved output value' }],
 };
+
+// ── "No data" badge ───────────────────────────────────────────────────────────
+
+function NoDataBadge() {
+  return (
+    <span className="inline-flex items-center px-1 py-0.5 rounded text-[9px] font-semibold bg-amber-900/40 text-amber-400 border border-amber-700/40">
+      no data
+    </span>
+  );
+}
+
+// Render a value preview — short and readable
+function ValuePreview({ value }: { value: unknown }) {
+  if (value === null || value === undefined || value === '') return <NoDataBadge />;
+  if (Array.isArray(value)) {
+    if (value.length === 0) return <NoDataBadge />;
+    return (
+      <span className="text-slate-400">[{value.length} item{value.length !== 1 ? 's' : ''}]</span>
+    );
+  }
+  if (typeof value === 'object') {
+    const keys = Object.keys(value as object);
+    if (keys.length === 0) return <NoDataBadge />;
+    return <span className="text-slate-400">{'{'}{keys.slice(0, 2).join(', ')}{keys.length > 2 ? ', …' : ''}{'}'}</span>;
+  }
+  const str = String(value);
+  return (
+    <span className="text-emerald-400 font-mono">
+      {str.length > 40 ? str.slice(0, 40) + '…' : str}
+    </span>
+  );
+}
 
 // ── Variable picker panel ─────────────────────────────────────────────────────
 
 function VariablePickerPanel({
   nodes,
+  testResults,
   onInsert,
 }: {
   nodes: CanvasNode[];
+  testResults: Record<string, NodeTestResult>;
   onInsert: (expression: string) => void;
 }) {
   if (nodes.length === 0) return null;
 
   return (
-    <div className="mt-1 bg-slate-850 border border-blue-800/50 rounded-md overflow-hidden shadow-lg">
+    <div className="mt-1 border border-blue-800/50 rounded-md overflow-hidden shadow-lg">
       <div className="bg-slate-800 px-2.5 py-1.5 border-b border-slate-700">
         <p className="text-[10px] font-semibold text-blue-400 uppercase tracking-wider">
           Click a field to insert it
@@ -65,14 +95,29 @@ function VariablePickerPanel({
         </p>
       </div>
 
-      <div className="max-h-52 overflow-y-auto">
+      <div className="max-h-60 overflow-y-auto">
         {nodes.map((n) => {
-          const fields = NODE_OUTPUT_FIELDS[n.data.nodeType] ?? [];
-          const isTransform = n.data.nodeType === 'transform';
+          const testResult = testResults[n.id];
+          const realOutput = testResult?.status === 'success' && testResult.output != null
+            ? (testResult.output as Record<string, unknown>)
+            : null;
+
+          // Build field list from real test output if available, otherwise use generic catalogue
+          const fields: Array<{ key: string; label: string; realValue?: unknown; hasReal: boolean }> =
+            realOutput
+              ? Object.entries(realOutput).map(([key, val]) => ({
+                  key,
+                  label: key,
+                  realValue: val,
+                  hasReal: true,
+                }))
+              : (NODE_OUTPUT_FIELDS[n.data.nodeType] ?? []).map((f) => ({
+                  ...f,
+                  hasReal: false,
+                }));
 
           return (
             <div key={n.id} className="px-2.5 py-2 border-b border-slate-800/60 last:border-0">
-              {/* Node header */}
               <div className="flex items-center gap-1.5 mb-1.5">
                 <span
                   className={`w-1.5 h-1.5 rounded-full shrink-0 ${
@@ -85,63 +130,57 @@ function VariablePickerPanel({
                     'bg-rose-400'
                   }`}
                 />
-                <span className="text-[11px] font-semibold text-white truncate">
-                  {n.data.label}
-                </span>
-                <span className="text-[9px] text-slate-500 shrink-0">
-                  {n.data.nodeType}
-                </span>
+                <span className="text-[11px] font-semibold text-white truncate">{n.data.label}</span>
+                <span className="text-[9px] text-slate-500 shrink-0">{n.data.nodeType}</span>
+                {realOutput && (
+                  <span className="text-[9px] text-emerald-500 shrink-0 ml-auto">● tested</span>
+                )}
+                {!realOutput && (
+                  <span className="text-[9px] text-slate-600 shrink-0 ml-auto italic">test to see real fields</span>
+                )}
               </div>
 
-              {/* Field chips */}
               <div className="flex flex-wrap gap-1">
-                {isTransform ? (
-                  // Transform: only show whole-node reference + note
+                {n.data.nodeType === 'transform' && !realOutput ? (
                   <>
                     <button
                       type="button"
                       onClick={() => onInsert(`{{nodes.${n.id}.YOUR_KEY}}`)}
-                      className="inline-flex items-center gap-1 text-[10px] bg-slate-700 hover:bg-blue-700 text-emerald-300 hover:text-white rounded px-1.5 py-0.5 font-mono transition-colors cursor-pointer"
-                      title="Replace YOUR_KEY with one of your mapped output key names"
+                      className="inline-flex items-center gap-1 text-[10px] bg-slate-700 hover:bg-blue-700 text-emerald-300 hover:text-white rounded px-1.5 py-0.5 font-mono transition-colors"
+                      title="Replace YOUR_KEY with your mapping key name"
                     >
                       .YOUR_KEY
                     </button>
-                    <span className="text-[10px] text-slate-500 self-center">
-                      ← replace with your mapping key
-                    </span>
+                    <span className="text-[10px] text-slate-500 self-center">← replace with your mapping key</span>
                   </>
                 ) : fields.length === 0 ? (
                   <button
                     type="button"
                     onClick={() => onInsert(`{{nodes.${n.id}}}`)}
-                    className="inline-flex items-center gap-1 text-[10px] bg-slate-700 hover:bg-blue-700 text-emerald-300 hover:text-white rounded px-1.5 py-0.5 font-mono transition-colors cursor-pointer"
+                    className="text-[10px] bg-slate-700 hover:bg-blue-700 text-emerald-300 hover:text-white rounded px-1.5 py-0.5 font-mono transition-colors"
                   >
                     {`{{nodes.${n.id}}}`}
                   </button>
                 ) : (
                   fields.map((f) => (
-                    <button
-                      key={f.key}
-                      type="button"
-                      onClick={() =>
-                        f.key === '…'
-                          ? undefined
-                          : onInsert(`{{nodes.${n.id}.${f.key}}}`)
-                      }
-                      title={`Inserts: {{nodes.${n.id}.${f.key}}}`}
-                      className={`inline-flex items-center gap-1 text-[10px] rounded px-1.5 py-0.5 transition-colors ${
-                        f.key === '…'
-                          ? 'text-slate-500 cursor-default'
-                          : 'bg-slate-700 hover:bg-blue-700 text-emerald-300 hover:text-white font-mono cursor-pointer'
-                      }`}
-                    >
-                      {f.key !== '…' && (
-                        <span className="font-mono">.{f.key}</span>
-                      )}
-                      <span className={f.key !== '…' ? 'text-slate-400 group-hover:text-slate-200 font-sans' : ''}>
-                        {f.label}
-                      </span>
-                    </button>
+                    f.key === '…' ? null : (
+                      <button
+                        key={f.key}
+                        type="button"
+                        onClick={() => onInsert(`{{nodes.${n.id}.${f.key}}}`)}
+                        title={`Inserts: {{nodes.${n.id}.${f.key}}}`}
+                        className="inline-flex items-center gap-1 text-[10px] bg-slate-700 hover:bg-blue-700 text-emerald-300 hover:text-white rounded px-1.5 py-0.5 transition-colors font-mono"
+                      >
+                        <span>.{f.key}</span>
+                        {f.hasReal ? (
+                          <span className="font-sans text-slate-400 group-hover:text-slate-200 ml-0.5">
+                            = <ValuePreview value={f.realValue} />
+                          </span>
+                        ) : (
+                          <span className="font-sans text-slate-500 ml-0.5">{f.label}</span>
+                        )}
+                      </button>
+                    )
                   ))
                 )}
               </div>
@@ -153,7 +192,7 @@ function VariablePickerPanel({
   );
 }
 
-// ── Helper: insert text at cursor in a controlled field ───────────────────────
+// ── Helper: insert text at cursor ─────────────────────────────────────────────
 
 function insertAtCursor(
   el: HTMLTextAreaElement | HTMLInputElement,
@@ -165,7 +204,6 @@ function insertAtCursor(
   const end = el.selectionEnd ?? currentValue.length;
   const next = currentValue.slice(0, start) + text + currentValue.slice(end);
   onChange(next);
-  // Restore cursor after React batches the state update
   requestAnimationFrame(() => {
     el.selectionStart = start + text.length;
     el.selectionEnd = start + text.length;
@@ -182,6 +220,7 @@ function ExpressionTextArea({
   placeholder,
   onChange,
   nodes,
+  testResults,
 }: {
   label: string;
   value: string;
@@ -189,16 +228,14 @@ function ExpressionTextArea({
   placeholder?: string;
   onChange: (v: string) => void;
   nodes: CanvasNode[];
+  testResults: Record<string, NodeTestResult>;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
 
   function handleInsert(expr: string) {
-    if (ref.current) {
-      insertAtCursor(ref.current, expr, value, onChange);
-    } else {
-      onChange(value + expr);
-    }
+    if (ref.current) insertAtCursor(ref.current, expr, value, onChange);
+    else onChange(value + expr);
     setOpen(false);
   }
 
@@ -212,9 +249,7 @@ function ExpressionTextArea({
             onClick={() => setOpen((p) => !p)}
             title="Insert a variable from another node"
             className={`flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded transition-colors shrink-0 ${
-              open
-                ? 'bg-blue-600 text-white'
-                : 'text-blue-400 hover:text-white hover:bg-slate-700'
+              open ? 'bg-blue-600 text-white' : 'text-blue-400 hover:text-white hover:bg-slate-700'
             }`}
           >
             <Braces className="w-2.5 h-2.5" />
@@ -230,7 +265,9 @@ function ExpressionTextArea({
         onChange={(e) => onChange(e.target.value)}
         className="w-full bg-slate-800 border border-slate-600 text-slate-200 rounded-md px-2.5 py-1.5 text-xs placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 resize-none"
       />
-      {open && <VariablePickerPanel nodes={nodes} onInsert={handleInsert} />}
+      {open && (
+        <VariablePickerPanel nodes={nodes} testResults={testResults} onInsert={handleInsert} />
+      )}
     </div>
   );
 }
@@ -243,6 +280,7 @@ function ExpressionInput({
   placeholder,
   onChange,
   nodes,
+  testResults,
   hint,
 }: {
   label?: string;
@@ -250,17 +288,15 @@ function ExpressionInput({
   placeholder?: string;
   onChange: (v: string) => void;
   nodes: CanvasNode[];
+  testResults: Record<string, NodeTestResult>;
   hint?: string;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLInputElement>(null);
 
   function handleInsert(expr: string) {
-    if (ref.current) {
-      insertAtCursor(ref.current, expr, value, onChange);
-    } else {
-      onChange(value + expr);
-    }
+    if (ref.current) insertAtCursor(ref.current, expr, value, onChange);
+    else onChange(value + expr);
     setOpen(false);
   }
 
@@ -268,18 +304,14 @@ function ExpressionInput({
     <div className="space-y-1">
       {(label || nodes.length > 0) && (
         <div className="flex items-center justify-between gap-1">
-          {label && (
-            <label className="block text-xs font-medium text-slate-400">{label}</label>
-          )}
+          {label && <label className="block text-xs font-medium text-slate-400">{label}</label>}
           {nodes.length > 0 && (
             <button
               type="button"
               onClick={() => setOpen((p) => !p)}
               title="Insert a variable from another node"
               className={`flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded transition-colors shrink-0 ${
-                open
-                  ? 'bg-blue-600 text-white'
-                  : 'text-blue-400 hover:text-white hover:bg-slate-700'
+                open ? 'bg-blue-600 text-white' : 'text-blue-400 hover:text-white hover:bg-slate-700'
               }`}
             >
               <Braces className="w-2.5 h-2.5" />
@@ -297,7 +329,157 @@ function ExpressionInput({
         className="w-full bg-slate-800 border border-slate-600 text-slate-200 rounded-md px-2.5 py-1.5 text-xs placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
       />
       {hint && <p className="text-slate-500 text-[10px]">{hint}</p>}
-      {open && <VariablePickerPanel nodes={nodes} onInsert={handleInsert} />}
+      {open && (
+        <VariablePickerPanel nodes={nodes} testResults={testResults} onInsert={handleInsert} />
+      )}
+    </div>
+  );
+}
+
+// ── Node test result display ──────────────────────────────────────────────────
+
+function TestResultDisplay({ result }: { result: NodeTestResult }) {
+  const [rawOpen, setRawOpen] = useState(false);
+
+  return (
+    <div className={`rounded-md border ${
+      result.status === 'success' ? 'border-emerald-800/50' : 'border-red-800/50'
+    } overflow-hidden`}>
+      {/* Status bar */}
+      <div className={`flex items-center justify-between px-2.5 py-1.5 ${
+        result.status === 'success' ? 'bg-emerald-900/30' : 'bg-red-900/30'
+      }`}>
+        <div className="flex items-center gap-1.5">
+          {result.status === 'success'
+            ? <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+            : <AlertCircle className="w-3 h-3 text-red-400" />
+          }
+          <span className={`text-[10px] font-semibold ${
+            result.status === 'success' ? 'text-emerald-400' : 'text-red-400'
+          }`}>
+            {result.status === 'success' ? 'Success' : 'Failed'}
+          </span>
+        </div>
+        <div className="flex items-center gap-1 text-slate-500">
+          <Clock className="w-2.5 h-2.5" />
+          <span className="text-[10px]">{result.durationMs}ms</span>
+        </div>
+      </div>
+
+      {/* Error */}
+      {result.status === 'failure' && result.error && (
+        <div className="px-2.5 py-2 bg-red-950/20">
+          <p className="text-[10px] text-red-300 break-words">{result.error}</p>
+        </div>
+      )}
+
+      {/* Success output */}
+      {result.status === 'success' && result.output != null && (
+        <div className="px-2.5 py-2 bg-slate-900 space-y-1.5">
+          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Output fields</p>
+          {typeof result.output === 'object' && result.output !== null ? (
+            <>
+              <div className="space-y-1">
+                {Object.entries(result.output as Record<string, unknown>).map(([key, val]) => (
+                  <div key={key} className="flex items-start gap-2">
+                    <span className="text-[10px] font-mono text-emerald-400 shrink-0 mt-0.5">.{key}</span>
+                    <span className="text-[10px] min-w-0 break-all">
+                      <ValuePreview value={val} />
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => setRawOpen((p) => !p)}
+                className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-slate-300 transition-colors mt-1"
+              >
+                {rawOpen ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
+                {rawOpen ? 'Hide' : 'Show'} raw JSON
+              </button>
+              {rawOpen && (
+                <pre className="text-[10px] text-slate-300 bg-slate-800 rounded p-2 overflow-auto max-h-40 font-mono">
+                  {JSON.stringify(result.output, null, 2)}
+                </pre>
+              )}
+            </>
+          ) : (
+            <ValuePreview value={result.output} />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Node test panel ───────────────────────────────────────────────────────────
+
+function NodeTestPanel({
+  nodeId,
+  workflowId,
+  savedResult,
+}: {
+  nodeId: string;
+  workflowId: string;
+  savedResult: NodeTestResult | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const [localResult, setLocalResult] = useState<NodeTestResult | null>(null);
+  const testNode = useTestNode();
+
+  const displayResult = localResult ?? savedResult;
+
+  async function handleRun() {
+    const result = await testNode.mutateAsync({ workflowId, nodeId });
+    setLocalResult(result);
+  }
+
+  return (
+    <div className="rounded-md border border-slate-700 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((p) => !p)}
+        className="w-full flex items-center justify-between px-2.5 py-1.5 bg-slate-800 hover:bg-slate-750 transition-colors"
+      >
+        <div className="flex items-center gap-1.5">
+          <Play className="w-3 h-3 text-blue-400" />
+          <span className="text-[10px] font-semibold text-slate-300 uppercase tracking-wider">
+            Test this node
+          </span>
+          {displayResult && (
+            <span className={`w-1.5 h-1.5 rounded-full ${
+              displayResult.status === 'success' ? 'bg-emerald-400' : 'bg-red-400'
+            }`} />
+          )}
+        </div>
+        {open ? <ChevronUp className="w-3 h-3 text-slate-500" /> : <ChevronDown className="w-3 h-3 text-slate-500" />}
+      </button>
+
+      {open && (
+        <div className="p-2.5 space-y-2.5 bg-slate-900/60">
+          {/* Run button */}
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={testNode.isPending}
+            className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded text-xs font-medium transition-colors"
+          >
+            {testNode.isPending
+              ? <><Loader2 className="w-3 h-3 animate-spin" /> Running…</>
+              : <><Play className="w-3 h-3" /> Run node</>
+            }
+          </button>
+
+          {/* Last result */}
+          {displayResult && <TestResultDisplay result={displayResult} />}
+
+          {!displayResult && !testNode.isPending && (
+            <p className="text-[10px] text-slate-600 text-center italic">
+              No test run yet — click Run node to see output.
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -307,6 +489,11 @@ function ExpressionInput({
 export function NodeConfigPanel() {
   const { nodes, selectedNodeId, setNodes, activeWorkflow, setActiveWorkflow } =
     useWorkflowStore();
+
+  const isUnsaved = !activeWorkflow?.id || activeWorkflow.id.startsWith('__new__');
+  const { data: testResults = {} } = useNodeTestResults(
+    isUnsaved ? null : activeWorkflow?.id
+  );
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
 
@@ -351,6 +538,7 @@ export function NodeConfigPanel() {
 
   const cfg = data.config as Record<string, unknown>;
   const otherNodes = nodes.filter((n) => n.id !== selectedNodeId);
+  const savedTestResult = selectedNodeId ? (testResults[selectedNodeId] ?? null) : null;
 
   return (
     <div className="p-4 space-y-4">
@@ -372,7 +560,7 @@ export function NodeConfigPanel() {
         {data.isEntry && <Star className="w-4 h-4 text-amber-400 fill-amber-400" />}
       </div>
 
-      {/* Name */}
+      {/* Node name */}
       <div className="space-y-1">
         <label className="block text-xs font-medium text-slate-400">Node name</label>
         <input
@@ -383,91 +571,111 @@ export function NodeConfigPanel() {
         />
       </div>
 
+      {/* Test panel */}
+      {isUnsaved ? (
+        <div className="flex items-center gap-1.5 px-2.5 py-2 bg-slate-800/50 rounded-md border border-slate-700">
+          <AlertCircle className="w-3 h-3 text-slate-500 shrink-0" />
+          <p className="text-[10px] text-slate-500">Save the workflow first to enable node testing.</p>
+        </div>
+      ) : (
+        <NodeTestPanel
+          key={selectedNodeId}
+          nodeId={selectedNodeId!}
+          workflowId={activeWorkflow!.id}
+          savedResult={savedTestResult}
+        />
+      )}
+
       <div className="border-t border-slate-700" />
 
       {/* Type-specific config */}
       {nodeType === 'http' && (
-        <HttpConfig cfg={cfg} onChange={updateConfig} otherNodes={otherNodes} />
+        <HttpConfig cfg={cfg} onChange={updateConfig} otherNodes={otherNodes} testResults={testResults} />
       )}
       {nodeType === 'llm' && (
-        <LLMConfig cfg={cfg} onChange={updateConfig} otherNodes={otherNodes} />
+        <LLMConfig cfg={cfg} onChange={updateConfig} otherNodes={otherNodes} testResults={testResults} />
       )}
       {nodeType === 'condition' && (
-        <ConditionConfig cfg={cfg} onChange={updateConfig} otherNodes={otherNodes} />
+        <ConditionConfig cfg={cfg} onChange={updateConfig} otherNodes={otherNodes} testResults={testResults} />
       )}
       {nodeType === 'switch' && (
-        <SwitchConfig cfg={cfg} onChange={updateConfig} otherNodes={otherNodes} />
+        <SwitchConfig cfg={cfg} onChange={updateConfig} otherNodes={otherNodes} testResults={testResults} />
       )}
       {nodeType === 'transform' && (
-        <TransformConfig cfg={cfg} onChange={updateConfig} otherNodes={otherNodes} />
+        <TransformConfig cfg={cfg} onChange={updateConfig} otherNodes={otherNodes} testResults={testResults} />
       )}
       {nodeType === 'output' && (
-        <OutputConfig cfg={cfg} onChange={updateConfig} otherNodes={otherNodes} />
+        <OutputConfig cfg={cfg} onChange={updateConfig} otherNodes={otherNodes} testResults={testResults} />
       )}
 
-      {/* Shared: retry / timeout */}
+      {/* Retry & Timeout */}
       <div className="border-t border-slate-700" />
-      <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">
-        Retry & Timeout
-      </p>
-      <div className="space-y-1">
-        <label className="block text-xs font-medium text-slate-400">Retries (0–5)</label>
-        <input
-          type="number"
-          min={0}
-          max={5}
-          value={String(data.retries ?? 0)}
-          onChange={(e) => updateData({ retries: Number(e.target.value) })}
-          className="w-full bg-slate-800 border border-slate-600 text-slate-200 rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-        />
-      </div>
-      <div className="space-y-1">
-        <label className="block text-xs font-medium text-slate-400">Retry delay (ms)</label>
-        <input
-          type="number"
-          min={0}
-          value={String(data.retryDelayMs ?? 0)}
-          onChange={(e) => updateData({ retryDelayMs: Number(e.target.value) })}
-          className="w-full bg-slate-800 border border-slate-600 text-slate-200 rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-        />
-      </div>
-      <div className="space-y-1">
-        <label className="block text-xs font-medium text-slate-400">Timeout (ms, 0 = none)</label>
-        <input
-          type="number"
-          min={0}
-          value={String(data.timeoutMs ?? 0)}
-          onChange={(e) =>
-            updateData({ timeoutMs: Number(e.target.value) || undefined })
-          }
-          className="w-full bg-slate-800 border border-slate-600 text-slate-200 rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-        />
-      </div>
+      <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Retry & Timeout</p>
+      {[
+        { label: 'Retries (0–5)', key: 'retries', min: 0, max: 5, val: data.retries ?? 0 },
+        { label: 'Retry delay (ms)', key: 'retryDelayMs', min: 0, val: data.retryDelayMs ?? 0 },
+        { label: 'Timeout (ms, 0 = none)', key: 'timeoutMs', min: 0, val: data.timeoutMs ?? 0 },
+      ].map(({ label, key, min, max, val }) => (
+        <div key={key} className="space-y-1">
+          <label className="block text-xs font-medium text-slate-400">{label}</label>
+          <input
+            type="number"
+            min={min}
+            max={max}
+            value={String(val)}
+            onChange={(e) =>
+              updateData({
+                [key]: key === 'timeoutMs'
+                  ? (Number(e.target.value) || undefined)
+                  : Number(e.target.value),
+              })
+            }
+            className="w-full bg-slate-800 border border-slate-600 text-slate-200 rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+          />
+        </div>
+      ))}
     </div>
   );
 }
 
 // ── Per-type config forms ─────────────────────────────────────────────────────
 
-function HttpConfig({
-  cfg,
-  onChange,
-  otherNodes,
-}: {
+type ConfigProps = {
   cfg: Record<string, unknown>;
   onChange: (p: Record<string, unknown>) => void;
   otherNodes: CanvasNode[];
-}) {
+  testResults: Record<string, NodeTestResult>;
+};
+
+function HttpConfig({ cfg, onChange, otherNodes, testResults }: ConfigProps) {
+  const headers = (cfg.headers as Record<string, string>) ?? {};
+  const headerEntries = Object.entries(headers);
+
+  function updateHeader(oldKey: string, newKey: string, value: string) {
+    const updated: Record<string, string> = {};
+    for (const [k, v] of Object.entries(headers)) {
+      updated[k === oldKey ? newKey : k] = k === oldKey ? value : v;
+    }
+    onChange({ headers: updated });
+  }
+
+  function addHeader() {
+    onChange({ headers: { ...headers, '': '' } });
+  }
+
+  function removeHeader(key: string) {
+    const updated = { ...headers };
+    delete updated[key];
+    onChange({ headers: Object.keys(updated).length ? updated : undefined });
+  }
+
   return (
     <>
       <Select
         label="Method"
         value={String(cfg.method ?? 'GET')}
         onChange={(e) => onChange({ method: e.target.value })}
-        options={['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((m) => ({
-          value: m,
-          label: m,
-        }))}
+        options={['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((m) => ({ value: m, label: m }))}
       />
       <ExpressionInput
         label="URL"
@@ -475,34 +683,81 @@ function HttpConfig({
         onChange={(v) => onChange({ url: v })}
         placeholder="https://api.example.com/data"
         nodes={otherNodes}
+        testResults={testResults}
       />
+
+      {/* Headers */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <label className="block text-xs font-medium text-slate-400">Headers</label>
+          <button
+            type="button"
+            onClick={addHeader}
+            className="text-[10px] text-blue-400 hover:text-white hover:bg-slate-700 px-1.5 py-0.5 rounded transition-colors"
+          >
+            + Add header
+          </button>
+        </div>
+        {headerEntries.length === 0 && (
+          <p className="text-[10px] text-slate-600 italic">
+            No custom headers — Content-Type: application/json is sent by default.
+          </p>
+        )}
+        {headerEntries.map(([key, value], i) => (
+          <div key={i} className="flex items-center gap-1">
+            <input
+              className="flex-1 min-w-0 bg-slate-800 border border-slate-600 text-slate-200 rounded px-2 py-1 text-xs placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              value={key}
+              onChange={(e) => updateHeader(key, e.target.value, value)}
+              placeholder="Header name"
+            />
+            <span className="text-slate-600 text-xs shrink-0">:</span>
+            <input
+              className="flex-1 min-w-0 bg-slate-800 border border-slate-600 text-slate-200 rounded px-2 py-1 text-xs placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              value={value}
+              onChange={(e) => updateHeader(key, key, e.target.value)}
+              placeholder="Value"
+            />
+            <button
+              type="button"
+              onClick={() => removeHeader(key)}
+              className="text-slate-500 hover:text-red-400 px-1 shrink-0 text-sm"
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        {headerEntries.length > 0 && (
+          <p className="text-[10px] text-slate-600">
+            Custom headers are merged with Content-Type: application/json (your value overrides it if set).
+          </p>
+        )}
+      </div>
+
       <ExpressionTextArea
         label="Body (JSON)"
         rows={3}
-        value={cfg.body ? JSON.stringify(cfg.body, null, 2) : ''}
+        value={
+          cfg.body == null
+            ? ''
+            : typeof cfg.body === 'string'
+              ? cfg.body
+              : JSON.stringify(cfg.body, null, 2)
+        }
         onChange={(v) => {
-          try {
-            onChange({ body: JSON.parse(v) });
-          } catch {
-            onChange({ body: v });
-          }
+          if (!v.trim()) { onChange({ body: undefined }); return; }
+          try { onChange({ body: JSON.parse(v) }); }
+          catch { onChange({ body: v }); }
         }}
         placeholder='{"key": "value"}'
         nodes={otherNodes}
+        testResults={testResults}
       />
     </>
   );
 }
 
-function LLMConfig({
-  cfg,
-  onChange,
-  otherNodes,
-}: {
-  cfg: Record<string, unknown>;
-  onChange: (p: Record<string, unknown>) => void;
-  otherNodes: CanvasNode[];
-}) {
+function LLMConfig({ cfg, onChange, otherNodes, testResults }: ConfigProps) {
   return (
     <>
       <Select
@@ -516,35 +771,21 @@ function LLMConfig({
       />
       <div className="space-y-1">
         <label className="block text-xs font-medium text-slate-400">Model</label>
-        <input
-          type="text"
-          value={String(cfg.model ?? '')}
-          onChange={(e) => onChange({ model: e.target.value })}
+        <input type="text" value={String(cfg.model ?? '')} onChange={(e) => onChange({ model: e.target.value })}
           placeholder="gpt-4o-mini"
-          className="w-full bg-slate-800 border border-slate-600 text-slate-200 rounded-md px-2.5 py-1.5 text-xs placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-        />
+          className="w-full bg-slate-800 border border-slate-600 text-slate-200 rounded-md px-2.5 py-1.5 text-xs placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
       </div>
       <div className="space-y-1">
         <label className="block text-xs font-medium text-slate-400">Temperature (0–2)</label>
-        <input
-          type="number"
-          min={0}
-          max={2}
-          step={0.1}
-          value={String(cfg.temperature ?? 0.7)}
+        <input type="number" min={0} max={2} step={0.1} value={String(cfg.temperature ?? 0.7)}
           onChange={(e) => onChange({ temperature: parseFloat(e.target.value) })}
-          className="w-full bg-slate-800 border border-slate-600 text-slate-200 rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-        />
+          className="w-full bg-slate-800 border border-slate-600 text-slate-200 rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
       </div>
       <div className="space-y-1">
         <label className="block text-xs font-medium text-slate-400">Max tokens</label>
-        <input
-          type="number"
-          min={1}
-          value={String(cfg.maxTokens ?? 500)}
+        <input type="number" min={1} value={String(cfg.maxTokens ?? 500)}
           onChange={(e) => onChange({ maxTokens: Number(e.target.value) })}
-          className="w-full bg-slate-800 border border-slate-600 text-slate-200 rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-        />
+          className="w-full bg-slate-800 border border-slate-600 text-slate-200 rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
       </div>
       <ExpressionTextArea
         label="System prompt"
@@ -553,6 +794,7 @@ function LLMConfig({
         onChange={(v) => onChange({ systemPrompt: v })}
         placeholder="You are a helpful assistant..."
         nodes={otherNodes}
+        testResults={testResults}
       />
       <ExpressionTextArea
         label="User prompt"
@@ -561,35 +803,27 @@ function LLMConfig({
         onChange={(v) => onChange({ userPrompt: v })}
         placeholder="Summarize the following content…"
         nodes={otherNodes}
+        testResults={testResults}
       />
     </>
   );
 }
 
-function ConditionConfig({
-  cfg,
-  onChange,
-  otherNodes,
-}: {
-  cfg: Record<string, unknown>;
-  onChange: (p: Record<string, unknown>) => void;
-  otherNodes: CanvasNode[];
-}) {
+function ConditionConfig({ cfg, onChange, otherNodes, testResults }: ConfigProps) {
   const condition = (cfg.condition as Record<string, unknown>) ?? {};
   function updateCond(patch: Record<string, unknown>) {
     onChange({ condition: { ...condition, ...patch } });
   }
   return (
     <>
-      <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">
-        Condition
-      </p>
+      <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Condition</p>
       <ExpressionInput
         label="Left side (what to check)"
         value={String(condition.left ?? '')}
         onChange={(v) => updateCond({ left: v })}
         placeholder="Pick a variable → e.g. HTTP status code"
         nodes={otherNodes}
+        testResults={testResults}
       />
       <Select
         label="Operator"
@@ -615,6 +849,7 @@ function ConditionConfig({
         onChange={(v) => updateCond({ right: v })}
         placeholder="200"
         nodes={otherNodes}
+        testResults={testResults}
       />
       <p className="text-[10px] text-slate-500 mt-1">
         Connect the <strong className="text-amber-400">true</strong> and{' '}
@@ -624,35 +859,17 @@ function ConditionConfig({
   );
 }
 
-function SwitchConfig({
-  cfg,
-  onChange,
-  otherNodes,
-}: {
-  cfg: Record<string, unknown>;
-  onChange: (p: Record<string, unknown>) => void;
-  otherNodes: CanvasNode[];
-}) {
+function SwitchConfig({ cfg, onChange, otherNodes, testResults }: ConfigProps) {
   const cases = (cfg.cases as Array<Record<string, unknown>>) ?? [];
 
   function updateCase(i: number, patch: Record<string, unknown>) {
-    const updated = cases.map((c, idx) => (idx === i ? { ...c, ...patch } : c));
-    onChange({ cases: updated });
+    onChange({ cases: cases.map((c, idx) => (idx === i ? { ...c, ...patch } : c)) });
   }
-
   function addCase() {
     onChange({
-      cases: [
-        ...cases,
-        {
-          label: `Case ${cases.length + 1}`,
-          condition: { type: 'leaf', left: '', operator: 'eq', right: '' },
-          next: '',
-        },
-      ],
+      cases: [...cases, { label: `Case ${cases.length + 1}`, condition: { type: 'leaf', left: '', operator: 'eq', right: '' }, next: '' }],
     });
   }
-
   function removeCase(i: number) {
     onChange({ cases: cases.filter((_, idx) => idx !== i) });
   }
@@ -670,28 +887,20 @@ function SwitchConfig({
                 onChange={(e) => updateCase(i, { label: e.target.value })}
                 placeholder="Case label"
               />
-              <button
-                onClick={() => removeCase(i)}
-                className="text-slate-500 hover:text-red-400 ml-1 shrink-0 text-sm leading-none"
-              >
-                ×
-              </button>
+              <button onClick={() => removeCase(i)} className="text-slate-500 hover:text-red-400 ml-1 shrink-0 text-sm">×</button>
             </div>
             <ExpressionInput
               label="Check this value"
               value={String(cond.left ?? '')}
-              onChange={(v) =>
-                updateCase(i, { condition: { ...cond, left: v } })
-              }
+              onChange={(v) => updateCase(i, { condition: { ...cond, left: v } })}
               placeholder="Pick a variable to check"
               nodes={otherNodes}
+              testResults={testResults}
             />
             <Select
               label="Operator"
               value={String(cond.operator ?? 'eq')}
-              onChange={(e) =>
-                updateCase(i, { condition: { ...cond, operator: e.target.value } })
-              }
+              onChange={(e) => updateCase(i, { condition: { ...cond, operator: e.target.value } })}
               options={[
                 { value: 'eq', label: 'equals (=)' },
                 { value: 'neq', label: 'not equals (≠)' },
@@ -705,9 +914,7 @@ function SwitchConfig({
               <input
                 className="w-full bg-slate-700 border border-slate-600 text-slate-200 rounded px-2 py-1 text-xs placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 value={String(cond.right ?? '')}
-                onChange={(e) =>
-                  updateCase(i, { condition: { ...cond, right: e.target.value } })
-                }
+                onChange={(e) => updateCase(i, { condition: { ...cond, right: e.target.value } })}
                 placeholder="e.g. 200"
               />
             </div>
@@ -727,31 +934,18 @@ function SwitchConfig({
   );
 }
 
-function TransformConfig({
-  cfg,
-  onChange,
-  otherNodes,
-}: {
-  cfg: Record<string, unknown>;
-  onChange: (p: Record<string, unknown>) => void;
-  otherNodes: CanvasNode[];
-}) {
+function TransformConfig({ cfg, onChange, otherNodes, testResults }: ConfigProps) {
   const mappings = (cfg.mappings as Record<string, string>) ?? {};
   const entries = Object.entries(mappings);
 
   function updateKey(oldKey: string, newKey: string) {
     const updated: Record<string, string> = {};
-    for (const [k, v] of Object.entries(mappings)) {
-      updated[k === oldKey ? newKey : k] = v;
-    }
+    for (const [k, v] of Object.entries(mappings)) updated[k === oldKey ? newKey : k] = v;
     onChange({ mappings: updated });
   }
-
   function addMapping() {
-    const key = `field${entries.length + 1}`;
-    onChange({ mappings: { ...mappings, [key]: '' } });
+    onChange({ mappings: { ...mappings, [`field${entries.length + 1}`]: '' } });
   }
-
   function removeMapping(key: string) {
     const updated = { ...mappings };
     delete updated[key];
@@ -760,9 +954,7 @@ function TransformConfig({
 
   return (
     <>
-      <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">
-        Mappings
-      </p>
+      <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Mappings</p>
       <p className="text-[10px] text-slate-500">
         Left = output key name. Right = where the value comes from (use{' '}
         <span className="text-blue-400">Insert variable</span> to pick from another node).
@@ -773,10 +965,9 @@ function TransformConfig({
           outputKey={k}
           valueExpr={v}
           nodes={otherNodes}
+          testResults={testResults}
           onKeyChange={(newKey) => updateKey(k, newKey)}
-          onValueChange={(newVal) =>
-            onChange({ mappings: { ...mappings, [k]: newVal } })
-          }
+          onValueChange={(newVal) => onChange({ mappings: { ...mappings, [k]: newVal } })}
           onRemove={() => removeMapping(k)}
         />
       ))}
@@ -791,16 +982,12 @@ function TransformConfig({
 }
 
 function TransformMappingRow({
-  outputKey,
-  valueExpr,
-  nodes,
-  onKeyChange,
-  onValueChange,
-  onRemove,
+  outputKey, valueExpr, nodes, testResults, onKeyChange, onValueChange, onRemove,
 }: {
   outputKey: string;
   valueExpr: string;
   nodes: CanvasNode[];
+  testResults: Record<string, NodeTestResult>;
   onKeyChange: (k: string) => void;
   onValueChange: (v: string) => void;
   onRemove: () => void;
@@ -809,11 +996,8 @@ function TransformMappingRow({
   const valueRef = useRef<HTMLInputElement>(null);
 
   function handleInsert(expr: string) {
-    if (valueRef.current) {
-      insertAtCursor(valueRef.current, expr, valueExpr, onValueChange);
-    } else {
-      onValueChange(valueExpr + expr);
-    }
+    if (valueRef.current) insertAtCursor(valueRef.current, expr, valueExpr, onValueChange);
+    else onValueChange(valueExpr + expr);
     setPickerOpen(false);
   }
 
@@ -846,39 +1030,25 @@ function TransformMappingRow({
             <Braces className="w-3 h-3" />
           </button>
         )}
-        <button
-          onClick={onRemove}
-          className="text-slate-500 hover:text-red-400 px-1 shrink-0 text-sm leading-none"
-        >
-          ×
-        </button>
+        <button onClick={onRemove} className="text-slate-500 hover:text-red-400 px-1 shrink-0 text-sm">×</button>
       </div>
       {pickerOpen && (
-        <VariablePickerPanel nodes={nodes} onInsert={handleInsert} />
+        <VariablePickerPanel nodes={nodes} testResults={testResults} onInsert={handleInsert} />
       )}
     </div>
   );
 }
 
-function OutputConfig({
-  cfg,
-  onChange,
-  otherNodes,
-}: {
-  cfg: Record<string, unknown>;
-  onChange: (p: Record<string, unknown>) => void;
-  otherNodes: CanvasNode[];
-}) {
+function OutputConfig({ cfg, onChange, otherNodes, testResults }: ConfigProps) {
   return (
-    <>
-      <ExpressionInput
-        label="Output value"
-        value={String(cfg.value ?? '')}
-        onChange={(v) => onChange({ value: v })}
-        placeholder="Pick a variable or type a static value"
-        nodes={otherNodes}
-        hint="This value becomes the final result of the workflow execution."
-      />
-    </>
+    <ExpressionInput
+      label="Output value"
+      value={String(cfg.value ?? '')}
+      onChange={(v) => onChange({ value: v })}
+      placeholder="Pick a variable or type a static value"
+      nodes={otherNodes}
+      testResults={testResults}
+      hint="This value becomes the final result of the workflow execution."
+    />
   );
 }

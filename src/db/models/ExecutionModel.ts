@@ -21,7 +21,8 @@ export interface ExecutionDocument extends Document {
     logs: ExecutionLogEntry[];
     startedAt: Date;
     completedAt?: Date;
-    triggeredBy: 'api' | 'webhook' | 'replay' | 'manual';
+    triggeredBy: 'api' | 'webhook' | 'replay' | 'manual' | 'node-test';
+    testNodeId?: string;
 }
 
 const ExecutionLogSchema = new Schema<ExecutionLogEntry>(
@@ -53,9 +54,10 @@ const ExecutionSchema = new Schema<ExecutionDocument>(
         completedAt: { type: Date },
         triggeredBy: {
             type: String,
-            enum: ['api', 'webhook', 'replay', 'manual'],
+            enum: ['api', 'webhook', 'replay', 'manual', 'node-test'],
             default: 'api',
         },
+        testNodeId: { type: String },
     },
     { timestamps: true }
 );

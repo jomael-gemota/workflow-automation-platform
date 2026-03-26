@@ -104,16 +104,22 @@ describe('ExpressionResolver', () => {
             expect(result).toBe('Hello world!');
         });
 
-        it('throws when a dot-notation node reference is missing from context', () => {
+        it('returns [missing: ...] placeholder when a referenced node is not in context', () => {
             const ctx = makeContext({});
-            expect(() => resolver.resolveTemplate('Value: {{ nodes.missing.field }}', ctx))
-                .toThrow('Node "missing" has no output in context');
+            const result = resolver.resolveTemplate('Value: {{ nodes.missing.field }}', ctx);
+            expect(result).toBe('Value: [missing: nodes.missing.field]');
         });
 
         it('replaces multiple placeholders', () => {
             const ctx = makeContext({ 'n1': { a: 'foo' }, 'n2': { b: 'bar' } });
             const result = resolver.resolveTemplate('{{ nodes.n1.a }} and {{ nodes.n2.b }}', ctx);
             expect(result).toBe('foo and bar');
+        });
+
+        it('serialises object values as JSON instead of [object Object]', () => {
+            const ctx = makeContext({ 'n1': { body: { id: 1, name: 'Test' } } });
+            const result = resolver.resolveTemplate('Data: {{ nodes.n1.body }}', ctx);
+            expect(result).toBe('Data: {"id":1,"name":"Test"}');
         });
     });
 });

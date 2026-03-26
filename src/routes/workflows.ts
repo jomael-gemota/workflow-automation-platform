@@ -2,21 +2,30 @@ import { FastifyInstance } from 'fastify';
 import { apiKeyAuth } from '../middleware/auth';
 import { WorkflowService } from '../services/WorkflowService';
 import { WorkflowRepository } from '../repositories/WorkflowRepository';
+import { ExecutionRepository } from '../repositories/ExecutionRepository';
+import { NodeExecutorRegistry } from '../engine/NodeExecutorRegistry';
 import {
     TriggerWorkflowSchema,
     CreateWorkflowSchema,
     UpdateWorkflowSchema,
     CursorPaginationSchema,
+    NodeTestSchema,
 } from '../validation/schemas';
 import { toJsonSchema } from '../validation/toJsonSchema';
 import { NotFoundError, BadRequestError } from '../errors/ApiError';
+import { ExecutionContext } from '../types/workflow.types';
 import crypto from 'crypto';
 
 export async function workflowRoutes(
     fastify: FastifyInstance,
-    options: { workflowService: WorkflowService; workflowRepo: WorkflowRepository }
+    options: {
+        workflowService: WorkflowService;
+        workflowRepo: WorkflowRepository;
+        executionRepo: ExecutionRepository;
+        registry: NodeExecutorRegistry;
+    }
 ): Promise<void> {
-    const { workflowService, workflowRepo } = options;
+    const { workflowService, workflowRepo, executionRepo, registry } = options;
 
     fastify.post(
         '/workflows',
@@ -117,6 +126,75 @@ export async function workflowRoutes(
 
             const versions = await workflowRepo.findVersionHistory(request.params.id);
             return reply.code(200).send({ workflowId: request.params.id, versions });
+        }
+    );
+
+    // ── Node test routes ──────────────────────────────────────────────────────
+
+    fastify.post<{ Params: { id: string; nodeId: string } }>(
+        '/workflows/:id/nodes/:nodeId/test',
+        {
+            preHandler: apiKeyAuth,
+            schema: { body: toJsonSchema(NodeTestSchema) },
+        },
+        async (request, reply) => {
+            const { context } = NodeTestSchema.parse(request.body);
+
+            const workflow = await workflowRepo.findById(request.params.id);
+            if (!workflow) throw NotFoundError(`Workflow ${request.params.id}`);
+
+            const node = workflow.nodes.find(n => n.id === request.params.nodeId);
+            if (!node) throw NotFoundError(`Node ${request.params.nodeId} in workflow ${request.params.id}`);
+
+            const executor = registry.get(node.type);
+
+            // Inject persisted test results from other nodes so that expressions like
+            // {{nodes.http-node-id.body}} resolve correctly when testing downstream nodes.
+            const savedTestResults = await executionRepo.findAllNodeTestResults(workflow.id);
+            const injectedVars: Record<string, unknown> = {};
+            for (const [nid, result] of Object.entries(savedTestResults)) {
+                if (nid !== node.id && result.status === 'success') {
+                    injectedVars[nid] = result.output;
+                }
+            }
+
+            const execContext: ExecutionContext = {
+                workflowId: workflow.id,
+                executionId: crypto.randomUUID(),
+                variables: { ...injectedVars, ...(context ?? {}) },
+                startedAt: new Date(),
+            };
+
+            const ranAt = new Date();
+            const start = Date.now();
+
+            try {
+                const output = await executor.execute(node, execContext);
+                const durationMs = Date.now() - start;
+                const result = { nodeId: node.id, status: 'success' as const, output, durationMs, ranAt };
+
+                await executionRepo.saveNodeTestResult(workflow.id, node.id, result);
+                return reply.code(200).send(result);
+            } catch (err: unknown) {
+                const durationMs = Date.now() - start;
+                const error = err instanceof Error ? err.message : String(err);
+                const result = { nodeId: node.id, status: 'failure' as const, output: null, error, durationMs, ranAt };
+
+                await executionRepo.saveNodeTestResult(workflow.id, node.id, result);
+                return reply.code(200).send(result);
+            }
+        }
+    );
+
+    fastify.get<{ Params: { id: string } }>(
+        '/workflows/:id/node-test-results',
+        { preHandler: apiKeyAuth },
+        async (request, reply) => {
+            const workflow = await workflowRepo.findById(request.params.id);
+            if (!workflow) throw NotFoundError(`Workflow ${request.params.id}`);
+
+            const results = await executionRepo.findAllNodeTestResults(request.params.id);
+            return reply.code(200).send(results);
         }
     );
 }

@@ -13,6 +13,10 @@ export function deserialize(workflow: WorkflowDefinition): {
   edges: CanvasEdge[];
 } {
   const positions = computePositions(workflow);
+  const entrySet = new Set(
+    workflow.entryNodeIds?.length ? workflow.entryNodeIds : [workflow.entryNodeId]
+  );
+
   const nodes: CanvasNode[] = workflow.nodes.map((wn, i) => ({
     id: wn.id,
     type: 'workflowNode',
@@ -21,7 +25,7 @@ export function deserialize(workflow: WorkflowDefinition): {
       label: wn.name,
       nodeType: wn.type,
       config: { ...wn.config },
-      isEntry: wn.id === workflow.entryNodeId,
+      isEntry: entrySet.has(wn.id),
       retries: wn.retries,
       retryDelayMs: wn.retryDelayMs,
       timeoutMs: wn.timeoutMs,
@@ -70,7 +74,8 @@ export function serialize(
   rfNodes: CanvasNode[],
   rfEdges: CanvasEdge[],
   entryNodeId: string,
-  schedule?: string
+  schedule?: string,
+  entryNodeIds?: string[]
 ): WorkflowDefinition {
   const nodes: WorkflowNode[] = rfNodes.map((rfn) => {
     const d = rfn.data;
@@ -145,12 +150,18 @@ export function serialize(
     };
   });
 
+  // Collect all canvas nodes marked as entry
+  const allEntryIds = rfNodes.filter(n => n.data.isEntry).map(n => n.id);
+  const resolvedEntryIds = allEntryIds.length > 0 ? allEntryIds : [entryNodeId];
+  const resolvedEntryNodeId = resolvedEntryIds[0];
+
   return {
     id: workflowId,
     name: workflowName,
     version: 1,
     nodes,
-    entryNodeId,
+    entryNodeId: resolvedEntryNodeId,
+    entryNodeIds: resolvedEntryIds.length > 1 ? resolvedEntryIds : undefined,
     schedule,
   };
 }
