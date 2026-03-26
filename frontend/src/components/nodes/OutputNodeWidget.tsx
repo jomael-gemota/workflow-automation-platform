@@ -4,13 +4,15 @@ import type { CanvasNodeData } from '../../store/workflowStore';
 
 type OutputNode = Node<CanvasNodeData, 'workflowNode'>;
 
-export function OutputNodeWidget({ data, selected }: NodeProps<OutputNode>) {
+export function OutputNodeWidget({ id, data, selected }: NodeProps<OutputNode>) {
   const cfg = data.config as { value?: string };
   return (
     <BaseNode
+      nodeId={id}
       nodeType="output"
       label={data.label}
       isEntry={data.isEntry}
+      isParallelEntry={data.isParallelEntry}
       isSelected={selected}
       handles={{ outputs: [] }}
     >

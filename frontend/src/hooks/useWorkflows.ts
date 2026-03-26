@@ -39,7 +39,7 @@ export function useUpdateWorkflow() {
       body,
     }: {
       id: string;
-      body: Partial<Pick<WorkflowDefinition, 'name' | 'nodes' | 'entryNodeId' | 'schedule'>>;
+      body: Partial<Pick<WorkflowDefinition, 'name' | 'nodes' | 'entryNodeId' | 'entryNodeIds' | 'schedule'>>;
     }) => api.updateWorkflow(id, body),
     onSuccess: (_data, vars) => {
       // Invalidate both the specific workflow cache AND the list so the sidebar refreshes

@@ -7,6 +7,7 @@ export interface CanvasNodeData extends Record<string, unknown> {
   nodeType: string;
   config: Record<string, unknown>;
   isEntry: boolean;
+  isParallelEntry?: boolean;
   retries?: number;
   retryDelayMs?: number;
   timeoutMs?: number;
@@ -14,6 +15,14 @@ export interface CanvasNodeData extends Record<string, unknown> {
 
 export type CanvasNode = Node<CanvasNodeData>;
 export type CanvasEdge = Edge;
+
+export type NodeExecutionStatus =
+  | 'waiting'   // click-triggered pre-activation: dims everything before execution starts
+  | 'pending'   // execution is running but this node hasn't started yet
+  | 'running'   // this node is currently executing
+  | 'success'
+  | 'failure'
+  | 'skipped';
 
 interface WorkflowStore {
   // Active workflow
@@ -41,6 +50,15 @@ interface WorkflowStore {
   // Last triggered execution
   lastExecutionId: string | null;
   setLastExecutionId: (id: string | null) => void;
+
+  // Live execution overlay
+  executionStatuses: Record<string, NodeExecutionStatus>;
+  setExecutionStatuses: (s: Record<string, NodeExecutionStatus>) => void;
+  clearExecutionStatuses: () => void;
+  /** Single atomic update: sets statuses + isExecuting=true in one set() to avoid grey flash */
+  beginExecution: (statuses: Record<string, NodeExecutionStatus>) => void;
+  isExecuting: boolean;
+  setIsExecuting: (v: boolean) => void;
 }
 
 export const useWorkflowStore = create<WorkflowStore>((set) => ({
@@ -63,4 +81,11 @@ export const useWorkflowStore = create<WorkflowStore>((set) => ({
 
   lastExecutionId: null,
   setLastExecutionId: (id) => set({ lastExecutionId: id }),
+
+  executionStatuses: {},
+  setExecutionStatuses: (s) => set({ executionStatuses: s }),
+  clearExecutionStatuses: () => set({ executionStatuses: {}, isExecuting: false }),
+  beginExecution: (statuses) => set({ executionStatuses: statuses, isExecuting: true }),
+  isExecuting: false,
+  setIsExecuting: (v) => set({ isExecuting: v }),
 }));

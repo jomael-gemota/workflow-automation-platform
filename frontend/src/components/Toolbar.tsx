@@ -15,6 +15,7 @@ export function Toolbar() {
     setActiveWorkflow,
     setLogOpen,
     setLastExecutionId,
+    beginExecution,
   } = useWorkflowStore();
 
   const update = useUpdateWorkflow();
@@ -29,15 +30,17 @@ export function Toolbar() {
       alert('Add at least one node to the canvas before saving.');
       return;
     }
-    const entryNodeId =
-      nodes.find((n) => n.data.isEntry)?.id ?? activeWorkflow.entryNodeId;
+    const entryNodes = nodes.filter((n) => n.data.isEntry);
+    const entryNodeId = entryNodes[0]?.id ?? activeWorkflow.entryNodeId;
+    const entryNodeIds = entryNodes.map((n) => n.id);
     const def = serialize(
       activeWorkflow.id,
       activeWorkflow.name,
       nodes,
       edges,
       entryNodeId,
-      activeWorkflow.schedule
+      activeWorkflow.schedule,
+      entryNodeIds.length > 0 ? entryNodeIds : undefined
     );
 
     try {
@@ -50,7 +53,7 @@ export function Toolbar() {
       } else {
         const updated = await update.mutateAsync({
           id: activeWorkflow.id,
-          body: { name: def.name, nodes: def.nodes, entryNodeId: def.entryNodeId },
+          body: { name: def.name, nodes: def.nodes, entryNodeId: def.entryNodeId, entryNodeIds: def.entryNodeIds },
         });
         // Keep activeWorkflow in sync with what the server returned (e.g. new version number)
         if (updated) {
@@ -67,6 +70,15 @@ export function Toolbar() {
   async function handleTrigger() {
     if (!activeWorkflow || !activeWorkflow.id || activeWorkflow.id.startsWith('__new__')) return;
     try {
+      // Phase 1 — dim everything immediately so the user sees the canvas "preparing"
+      // before any animation starts.  All nodes get 'waiting'; the real statuses
+      // (running / pending / success …) are set once the first poll result arrives.
+      const preStatuses: Record<string, import('../store/workflowStore').NodeExecutionStatus> = {};
+      for (const n of nodes) {
+        preStatuses[n.id] = 'waiting';
+      }
+      beginExecution(preStatuses);
+
       const summary = await trigger.mutateAsync({ workflowId: activeWorkflow.id });
       setLastExecutionId(summary.executionId);
       setLogOpen(true);

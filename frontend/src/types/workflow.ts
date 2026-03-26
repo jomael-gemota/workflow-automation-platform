@@ -16,6 +16,8 @@ export interface WorkflowNode {
   retries?: number;
   retryDelayMs?: number;
   timeoutMs?: number;
+  /** Canvas position saved by the visual builder */
+  position?: { x: number; y: number };
 }
 
 export interface WorkflowDefinition {

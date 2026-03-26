@@ -12,20 +12,29 @@ export function deserialize(workflow: WorkflowDefinition): {
   nodes: CanvasNode[];
   edges: CanvasEdge[];
 } {
-  const positions = computePositions(workflow);
+  // Only auto-compute positions for nodes that don't have a saved position.
+  // This means first-time layouts are auto-arranged; after the user saves,
+  // the persisted positions are used and manual arrangements are preserved.
+  const hasSavedPositions = workflow.nodes.some((n) => n.position != null);
+  const autoPositions = hasSavedPositions ? {} : computePositions(workflow);
+
   const entrySet = new Set(
     workflow.entryNodeIds?.length ? workflow.entryNodeIds : [workflow.entryNodeId]
   );
+  const isParallel = entrySet.size > 1;
 
   const nodes: CanvasNode[] = workflow.nodes.map((wn, i) => ({
     id: wn.id,
     type: 'workflowNode',
-    position: positions[wn.id] ?? { x: i * H_GAP, y: 0 },
+    // Prefer the saved canvas position, then the auto-computed position,
+    // then a simple fallback so nodes are never stacked on top of each other.
+    position: wn.position ?? autoPositions[wn.id] ?? { x: i * H_GAP, y: 0 },
     data: {
       label: wn.name,
       nodeType: wn.type,
       config: { ...wn.config },
       isEntry: entrySet.has(wn.id),
+      isParallelEntry: entrySet.has(wn.id) && isParallel,
       retries: wn.retries,
       retryDelayMs: wn.retryDelayMs,
       timeoutMs: wn.timeoutMs,
@@ -81,6 +90,12 @@ export function serialize(
     const d = rfn.data;
     const nodeType = d.nodeType as WorkflowNode['type'];
 
+    // Round positions to whole pixels to keep the JSON clean
+    const position = {
+      x: Math.round(rfn.position.x),
+      y: Math.round(rfn.position.y),
+    };
+
     if (nodeType === 'condition') {
       const trueEdge = rfEdges.find(
         (e) => e.source === rfn.id && e.sourceHandle === 'true'
@@ -101,6 +116,7 @@ export function serialize(
         retries: d.retries,
         retryDelayMs: d.retryDelayMs,
         timeoutMs: d.timeoutMs,
+        position,
       };
     }
 
@@ -131,6 +147,7 @@ export function serialize(
         retries: d.retries,
         retryDelayMs: d.retryDelayMs,
         timeoutMs: d.timeoutMs,
+        position,
       };
     }
 
@@ -147,6 +164,7 @@ export function serialize(
       retries: d.retries,
       retryDelayMs: d.retryDelayMs,
       timeoutMs: d.timeoutMs,
+      position,
     };
   });
 

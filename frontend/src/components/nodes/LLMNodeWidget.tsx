@@ -4,13 +4,15 @@ import type { CanvasNodeData } from '../../store/workflowStore';
 
 type LLMNode = Node<CanvasNodeData, 'workflowNode'>;
 
-export function LLMNodeWidget({ data, selected }: NodeProps<LLMNode>) {
+export function LLMNodeWidget({ id, data, selected }: NodeProps<LLMNode>) {
   const cfg = data.config as { provider?: string; model?: string };
   return (
     <BaseNode
+      nodeId={id}
       nodeType="llm"
       label={data.label}
       isEntry={data.isEntry}
+      isParallelEntry={data.isParallelEntry}
       isSelected={selected}
     >
       {cfg.model && (

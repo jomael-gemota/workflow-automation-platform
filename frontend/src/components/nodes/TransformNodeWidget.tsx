@@ -4,14 +4,16 @@ import type { CanvasNodeData } from '../../store/workflowStore';
 
 type TransformNode = Node<CanvasNodeData, 'workflowNode'>;
 
-export function TransformNodeWidget({ data, selected }: NodeProps<TransformNode>) {
+export function TransformNodeWidget({ id, data, selected }: NodeProps<TransformNode>) {
   const cfg = data.config as { mappings?: Record<string, string> };
   const count = Object.keys(cfg.mappings ?? {}).length;
   return (
     <BaseNode
+      nodeId={id}
       nodeType="transform"
       label={data.label}
       isEntry={data.isEntry}
+      isParallelEntry={data.isParallelEntry}
       isSelected={selected}
     >
       <p className="text-[10px] text-slate-400">

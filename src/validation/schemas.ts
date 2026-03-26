@@ -9,6 +9,7 @@ export const WorkflowNodeSchema = z.object({
     retries: z.number().int().min(0).max(5).optional(),
     retryDelayMs: z.number().int().min(0).optional(),
     timeoutMs: z.number().int().min(100).optional(),
+    position: z.object({ x: z.number(), y: z.number() }).optional(),
 });
 
 export const WorkflowDefinitionSchema = z.object({

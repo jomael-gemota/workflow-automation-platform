@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useMemo } from 'react';
 import {
   ReactFlow,
   Background,
@@ -9,6 +9,7 @@ import {
   applyEdgeChanges,
   type Connection,
   type NodeTypes,
+  type EdgeTypes,
   type ReactFlowInstance,
   type NodeProps,
   BackgroundVariant,
@@ -17,6 +18,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useWorkflowStore, type CanvasNode, type CanvasEdge, type CanvasNodeData } from '../../store/workflowStore';
+import { ExecutionEdge, type EdgeExecutionStatus } from '../edges/ExecutionEdge';
 import { HttpNodeWidget } from '../nodes/HttpNodeWidget';
 import { LLMNodeWidget } from '../nodes/LLMNodeWidget';
 import { ConditionNodeWidget } from '../nodes/ConditionNodeWidget';
@@ -45,6 +47,7 @@ function WorkflowNodeRenderer(props: NodeProps) {
 }
 
 const nodeTypes: NodeTypes = { workflowNode: WorkflowNodeRenderer };
+const edgeTypes: EdgeTypes = { execution: ExecutionEdge };
 
 const DEFAULT_CONFIGS: Partial<Record<NodeType, Record<string, unknown>>> = {
   http: { method: 'GET', url: '' },
@@ -55,6 +58,34 @@ const DEFAULT_CONFIGS: Partial<Record<NodeType, Record<string, unknown>>> = {
   output: { value: '' },
 };
 
+function resolveEdgeStatus(
+  srcStatus: string | undefined,
+  tgtStatus: string | undefined,
+  isExecuting: boolean
+): EdgeExecutionStatus {
+  // ── Pre-execution dim phase ───────────────────────────────────────
+  // When nodes are 'waiting' (just after Trigger click, before the first
+  // real poll result), dim the connector to match the greyed-out nodes.
+  if (srcStatus === 'waiting' || tgtStatus === 'waiting') return 'waiting';
+
+  // ── No execution data yet ─────────────────────────────────────────
+  if (!srcStatus) return 'idle';
+
+  // ── Live execution ────────────────────────────────────────────────
+  if (srcStatus === 'running') return 'flowing';
+  if (srcStatus === 'success') {
+    if (tgtStatus === 'skipped') return 'skipped';
+    if (tgtStatus === 'failure') return 'failure';
+    // During the linger window keep the progress bar sweeping so it
+    // visually "completes its run" before settling into solid green.
+    if (isExecuting) return 'flowing';
+    return 'success';
+  }
+  if (srcStatus === 'failure') return 'failure';
+  if (srcStatus === 'skipped') return 'skipped';
+  return 'idle';
+}
+
 export function WorkflowCanvas() {
   const {
     nodes,
@@ -64,6 +95,8 @@ export function WorkflowCanvas() {
     setSelectedNodeId,
     activeWorkflow,
     setDirty,
+    executionStatuses,
+    isExecuting,
   } = useWorkflowStore();
 
   const rfInstance = useRef<ReactFlowInstance<CanvasNode> | null>(null);
@@ -134,6 +167,23 @@ export function WorkflowCanvas() {
     setSelectedNodeId(null);
   }, [setSelectedNodeId]);
 
+  // Derive per-edge execution status and stamp it into edge.data
+  const styledEdges = useMemo<CanvasEdge[]>(() => {
+    return edges.map((edge) => {
+      const execStatus = resolveEdgeStatus(
+        executionStatuses[edge.source],
+        executionStatuses[edge.target],
+        isExecuting
+      );
+      return {
+        ...edge,
+        type: 'execution',
+        animated: false, // handled inside ExecutionEdge
+        data: { ...(edge.data ?? {}), executionStatus: execStatus, label: edge.label },
+      };
+    });
+  }, [edges, executionStatuses, isExecuting]);
+
   if (!activeWorkflow) {
     return (
       <div className="h-full flex items-center justify-center bg-slate-950">
@@ -148,7 +198,7 @@ export function WorkflowCanvas() {
     <div className="h-full w-full">
       <ReactFlow
         nodes={nodes}
-        edges={edges}
+        edges={styledEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
@@ -158,6 +208,8 @@ export function WorkflowCanvas() {
         onPaneClick={onPaneClick}
         onInit={(instance) => { rfInstance.current = instance; }}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        defaultEdgeOptions={{ type: 'execution' }}
         fitView
         deleteKeyCode="Delete"
         className="bg-slate-950"

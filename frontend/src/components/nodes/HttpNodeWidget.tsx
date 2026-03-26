@@ -4,13 +4,15 @@ import type { CanvasNodeData } from '../../store/workflowStore';
 
 type HttpNode = Node<CanvasNodeData, 'workflowNode'>;
 
-export function HttpNodeWidget({ data, selected }: NodeProps<HttpNode>) {
+export function HttpNodeWidget({ id, data, selected }: NodeProps<HttpNode>) {
   const cfg = data.config as { method?: string; url?: string };
   return (
     <BaseNode
+      nodeId={id}
       nodeType="http"
       label={data.label}
       isEntry={data.isEntry}
+      isParallelEntry={data.isParallelEntry}
       isSelected={selected}
     >
       {cfg.url && (

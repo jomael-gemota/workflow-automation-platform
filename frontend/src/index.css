@@ -17,6 +17,26 @@ body {
   cursor: default;
 }
 
+/* ── Execution edge: progress-bar sweep ───────────────────────────────
+   Uses normalised pathLength="1" on the SVG path element.
+   stroke-dasharray:"1" means one dash covering the full path.
+   Animating stroke-dashoffset from 1→0 draws the line from source to
+   target (the classic SVG "draw path" technique).
+   Opacity fades in at 6 % and out at 85 % so the loop restart
+   (instant jump back to dashoffset:1) is never visible.
+──────────────────────────────────────────────────────────────────── */
+@keyframes edgeProgressSweep {
+  0%   { stroke-dashoffset: 1; stroke-opacity: 0;   }
+  6%   { stroke-dashoffset: 0.94; stroke-opacity: 1; }
+  82%  { stroke-dashoffset: 0;    stroke-opacity: 1; }
+  100% { stroke-dashoffset: 0;    stroke-opacity: 0; }
+}
+
+.edge-progress-sweep {
+  stroke-dasharray: 1;
+  animation: edgeProgressSweep 1.15s cubic-bezier(0.4, 0, 0.55, 1) infinite;
+}
+
 .react-flow__controls button {
   background-color: #1e293b;
   border-color: #475569;

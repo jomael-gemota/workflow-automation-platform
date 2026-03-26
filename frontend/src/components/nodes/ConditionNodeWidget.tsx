@@ -4,12 +4,14 @@ import type { CanvasNodeData } from '../../store/workflowStore';
 
 type ConditionNode = Node<CanvasNodeData, 'workflowNode'>;
 
-export function ConditionNodeWidget({ data, selected }: NodeProps<ConditionNode>) {
+export function ConditionNodeWidget({ id, data, selected }: NodeProps<ConditionNode>) {
   return (
     <BaseNode
+      nodeId={id}
       nodeType="condition"
       label={data.label}
       isEntry={data.isEntry}
+      isParallelEntry={data.isParallelEntry}
       isSelected={selected}
       handles={{
         outputs: [

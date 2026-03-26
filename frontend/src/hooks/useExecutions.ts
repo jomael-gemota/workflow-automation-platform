@@ -26,9 +26,11 @@ export function useExecution(id: string | null) {
     queryKey: ['executions', 'detail', id],
     queryFn: () => api.getExecution(id!),
     enabled: !!id,
+    staleTime: 0,
     refetchInterval: (query) => {
       const s = query.state.data?.status;
-      return s === 'pending' || s === 'running' ? 2000 : false;
+      // Poll fast while active so canvas updates feel real-time
+      return s === 'pending' || s === 'running' ? 500 : false;
     },
   });
 }

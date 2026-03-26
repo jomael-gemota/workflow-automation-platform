@@ -4,7 +4,7 @@ import type { CanvasNodeData } from '../../store/workflowStore';
 
 type SwitchNode = Node<CanvasNodeData, 'workflowNode'>;
 
-export function SwitchNodeWidget({ data, selected }: NodeProps<SwitchNode>) {
+export function SwitchNodeWidget({ id, data, selected }: NodeProps<SwitchNode>) {
   const cfg = data.config as {
     cases?: Array<{ label?: string }>;
   };
@@ -16,9 +16,11 @@ export function SwitchNodeWidget({ data, selected }: NodeProps<SwitchNode>) {
 
   return (
     <BaseNode
+      nodeId={id}
       nodeType="switch"
       label={data.label}
       isEntry={data.isEntry}
+      isParallelEntry={data.isParallelEntry}
       isSelected={selected}
       handles={{ outputs }}
     >

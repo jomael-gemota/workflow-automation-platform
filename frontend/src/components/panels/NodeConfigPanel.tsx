@@ -525,17 +525,29 @@ export function NodeConfigPanel() {
     setNodes(updated);
   }
 
-  function setAsEntry() {
-    const updated = nodes.map((n) => ({
+  function toggleEntry() {
+    const willBeEntry = !data.isEntry;
+    // First pass: flip isEntry for the selected node
+    const afterToggle = nodes.map((n) =>
+      n.id === selectedNodeId ? { ...n, data: { ...n.data, isEntry: willBeEntry } } : n
+    );
+    // Second pass: recompute isParallelEntry for all nodes
+    const entryCount = afterToggle.filter(n => n.data.isEntry).length;
+    const updated = afterToggle.map((n) => ({
       ...n,
-      data: { ...n.data, isEntry: n.id === selectedNodeId },
+      data: { ...n.data, isParallelEntry: n.data.isEntry && entryCount > 1 },
     }));
     setNodes(updated);
+
+    // Keep activeWorkflow.entryNodeId pointing to at least one entry node
     if (activeWorkflow) {
-      setActiveWorkflow({ ...activeWorkflow, entryNodeId: selectedNodeId! });
+      const newEntryIds = updated.filter(n => n.data.isEntry).map(n => n.id);
+      const primary = newEntryIds[0] ?? activeWorkflow.entryNodeId;
+      setActiveWorkflow({ ...activeWorkflow, entryNodeId: primary });
     }
   }
 
+  const entryCount = nodes.filter(n => n.data.isEntry).length;
   const cfg = data.config as Record<string, unknown>;
   const otherNodes = nodes.filter((n) => n.id !== selectedNodeId);
   const savedTestResult = selectedNodeId ? (testResults[selectedNodeId] ?? null) : null;
@@ -548,17 +560,24 @@ export function NodeConfigPanel() {
           <p className="text-[10px] text-slate-500 uppercase tracking-wider">{nodeType}</p>
           <p className="text-sm font-semibold text-white truncate">{data.label}</p>
         </div>
-        {!data.isEntry && (
-          <button
-            onClick={setAsEntry}
-            className="text-slate-500 hover:text-amber-400 transition-colors"
-            title="Set as entry node"
-          >
-            <Star className="w-4 h-4" />
-          </button>
-        )}
-        {data.isEntry && <Star className="w-4 h-4 text-amber-400 fill-amber-400" />}
+        <button
+          onClick={toggleEntry}
+          title={data.isEntry ? 'Remove as start node' : 'Mark as start node (⭐ = runs on trigger)'}
+          className={`transition-colors ${data.isEntry ? 'text-amber-400' : 'text-slate-500 hover:text-amber-400'}`}
+        >
+          <Star className={`w-4 h-4 ${data.isEntry ? 'fill-amber-400' : ''}`} />
+        </button>
       </div>
+
+      {/* Multi-entry hint */}
+      {entryCount > 1 && data.isEntry && (
+        <div className="flex items-center gap-1.5 px-2 py-1.5 bg-amber-900/20 border border-amber-700/30 rounded-md">
+          <Star className="w-2.5 h-2.5 text-amber-400 fill-amber-400 shrink-0" />
+          <p className="text-[10px] text-amber-300">
+            {entryCount} start nodes — they will run simultaneously when triggered.
+          </p>
+        </div>
+      )}
 
       {/* Node name */}
       <div className="space-y-1">
