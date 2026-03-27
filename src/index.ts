@@ -30,6 +30,7 @@ import { oauthRoutes } from './routes/oauthRoutes';
 import { credentialRoutes } from './routes/credentialRoutes';
 
 import { connectDatabase } from './db/database';
+import { getBaseUrl } from './utils/baseUrl';
 import crypto from 'crypto';
 
 import sensible from '@fastify/sensible';
@@ -124,7 +125,7 @@ async function bootstrap() {
     // 7. Start
     const PORT = Number(process.env.PORT ?? 3000);
     await fastify.listen({ port: PORT, host: '0.0.0.0' });
-    console.log(`🚀 Platform running at http://localhost:${PORT}`);
+    console.log(`🚀 Platform running at ${getBaseUrl()}`);
 }
 
 bootstrap().catch(err => {

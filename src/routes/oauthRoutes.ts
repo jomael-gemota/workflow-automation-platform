@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { GoogleAuthService } from '../services/GoogleAuthService';
 import { SlackAuthService } from '../services/SlackAuthService';
 import { CredentialRepository } from '../repositories/CredentialRepository';
+import { getBaseUrl } from '../utils/baseUrl';
 
 export async function oauthRoutes(
     fastify: FastifyInstance,
@@ -12,7 +13,7 @@ export async function oauthRoutes(
     /** Check whether Google OAuth is configured */
     fastify.get('/oauth/google/status', async (_request, reply) => {
         const configured = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
-        const redirectUri  = process.env.GOOGLE_REDIRECT_URI ?? 'http://localhost:3000/oauth/google/callback';
+        const redirectUri  = process.env.GOOGLE_REDIRECT_URI ?? `${getBaseUrl()}/oauth/google/callback`;
         return reply.code(200).send({ configured, redirectUri });
     });
 
@@ -76,7 +77,7 @@ export async function oauthRoutes(
     /** Check whether Slack OAuth is configured */
     fastify.get('/oauth/slack/status', async (_request, reply) => {
         const configured = slackAuth.isConfigured();
-        const redirectUri = process.env.SLACK_REDIRECT_URI ?? 'http://localhost:3000/oauth/slack/callback';
+        const redirectUri = process.env.SLACK_REDIRECT_URI ?? `${getBaseUrl()}/oauth/slack/callback`;
         return reply.code(200).send({ configured, redirectUri });
     });
 

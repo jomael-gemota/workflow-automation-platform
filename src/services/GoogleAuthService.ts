@@ -1,6 +1,7 @@
 import { google } from 'googleapis';
 import { OAuth2Client } from 'google-auth-library';
 import { CredentialRepository } from '../repositories/CredentialRepository';
+import { getBaseUrl } from '../utils/baseUrl';
 
 const SCOPES = [
     'https://www.googleapis.com/auth/gmail.send',
@@ -12,7 +13,8 @@ const SCOPES = [
     'https://www.googleapis.com/auth/userinfo.profile',
 ];
 
-const DEFAULT_REDIRECT_URI = 'http://localhost:3000/oauth/google/callback';
+const getDefaultRedirectUri = () =>
+    `${getBaseUrl()}/oauth/google/callback`;
 
 export class GoogleAuthService {
     private credentialRepo: CredentialRepository;
@@ -45,7 +47,7 @@ export class GoogleAuthService {
         return new google.auth.OAuth2(
             process.env.GOOGLE_CLIENT_ID,
             process.env.GOOGLE_CLIENT_SECRET,
-            process.env.GOOGLE_REDIRECT_URI ?? DEFAULT_REDIRECT_URI
+            process.env.GOOGLE_REDIRECT_URI ?? getDefaultRedirectUri()
         );
     }
 

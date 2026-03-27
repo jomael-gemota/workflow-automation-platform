@@ -1,4 +1,5 @@
 import { CredentialRepository } from '../repositories/CredentialRepository';
+import { getBaseUrl } from '../utils/baseUrl';
 
 // Bot token scopes — used by the Slack app itself
 const SLACK_BOT_SCOPES = [
@@ -22,7 +23,8 @@ const SLACK_USER_SCOPES = [
     'users:read',
 ].join(',');
 
-const DEFAULT_REDIRECT_URI = 'http://localhost:3000/oauth/slack/callback';
+const getDefaultRedirectUri = () =>
+    `${getBaseUrl()}/oauth/slack/callback`;
 
 export class SlackAuthService {
     private credentialRepo: CredentialRepository;
@@ -54,7 +56,7 @@ export class SlackAuthService {
     getAuthorizationUrl(): string {
         this.assertConfigured();
         const clientId    = encodeURIComponent(process.env.SLACK_CLIENT_ID!);
-        const redirectUri = encodeURIComponent(process.env.SLACK_REDIRECT_URI ?? DEFAULT_REDIRECT_URI);
+        const redirectUri = encodeURIComponent(process.env.SLACK_REDIRECT_URI ?? getDefaultRedirectUri());
         // scope and user_scope must NOT be percent-encoded — Slack parses : and , literally
         return (
             `https://slack.com/oauth/v2/authorize` +
@@ -74,7 +76,7 @@ export class SlackAuthService {
     async handleCallback(code: string): Promise<{ teamName: string; userName: string }> {
         this.assertConfigured();
 
-        const redirectUri = process.env.SLACK_REDIRECT_URI ?? DEFAULT_REDIRECT_URI;
+        const redirectUri = process.env.SLACK_REDIRECT_URI ?? getDefaultRedirectUri();
 
         const body = new URLSearchParams({
             client_id:     process.env.SLACK_CLIENT_ID!,
