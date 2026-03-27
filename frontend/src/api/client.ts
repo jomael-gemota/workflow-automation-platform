@@ -19,7 +19,9 @@ async function request<T>(
   const res = await fetch(`${BASE}${path}`, {
     ...options,
     headers: {
-      'Content-Type': 'application/json',
+      // Only set Content-Type when there is a body — sending it on bodyless
+      // requests (DELETE, GET) causes Fastify to reject with 400.
+      ...(options.body != null ? { 'Content-Type': 'application/json' } : {}),
       'x-api-key': getApiKey(),
       ...(options.headers ?? {}),
     },
@@ -162,4 +164,33 @@ export function startSlackOAuth() {
 /** Check whether Slack OAuth is configured on the backend */
 export function checkSlackConfig() {
   return request<{ configured: boolean; redirectUri: string }>('/oauth/slack/status');
+}
+
+// ── Slack workspace data ──────────────────────────────────────
+
+export interface SlackChannel {
+  id: string;
+  name: string;
+  isPrivate: boolean;
+  isMember: boolean;
+}
+
+export interface SlackUser {
+  id: string;
+  name: string;
+  realName: string;
+  displayName: string;
+}
+
+export interface SlackChannelsResponse {
+  channels: SlackChannel[];
+  missingScopes: string[];
+}
+
+export function listSlackChannels(credentialId: string) {
+  return request<SlackChannelsResponse>(`/slack/channels?credentialId=${encodeURIComponent(credentialId)}`);
+}
+
+export function listSlackUsers(credentialId: string) {
+  return request<SlackUser[]>(`/slack/users?credentialId=${encodeURIComponent(credentialId)}`);
 }

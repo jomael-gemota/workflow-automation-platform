@@ -7,6 +7,7 @@ import { useTestNode, useNodeTestResults } from '../../hooks/useNodeTest';
 import type { NodeTestResult } from '../../types/workflow';
 import { useCredentialList } from '../../hooks/useCredentials';
 import { useSaveWorkflow } from '../../hooks/useSaveWorkflow';
+import { useSlackChannels, useSlackUsers } from '../../hooks/useSlackData';
 import { NodeIcon } from '../nodes/NodeIcons';
 
 // ── Output field catalogue (human-friendly labels per node type) ──────────────
@@ -827,10 +828,14 @@ function NodeTestPanel({
   const [open, setOpen] = useState(false);
   const [localResult, setLocalResult] = useState<NodeTestResult | null>(null);
   const testNode = useTestNode();
+  const { save: saveWorkflow } = useSaveWorkflow();
 
   const displayResult = localResult ?? savedResult;
 
   async function handleRun() {
+    // Always persist the latest in-memory config before executing so the
+    // backend runs with exactly what the user currently sees in the panel.
+    await saveWorkflow();
     const result = await testNode.mutateAsync({ workflowId, nodeId });
     setLocalResult(result);
   }
@@ -1968,16 +1973,197 @@ function SlackCredentialSelect({
   );
 }
 
+// ── SlackResourceSelect ────────────────────────────────────────────────────────
+// Smart picker: shows a searchable list when a credential is selected,
+// with a toggle to switch to free-form expression input.
+
+function SlackResourceSelect({
+  label,
+  value,
+  onChange,
+  items,
+  isLoading,
+  isError,
+  placeholder,
+  renderItem,
+  hasCredential,
+  otherNodes,
+  testResults,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  items: { id: string; display: string }[];
+  isLoading: boolean;
+  isError: boolean;
+  placeholder: string;
+  renderItem: (item: { id: string; display: string }) => string;
+  hasCredential: boolean;
+  otherNodes: ConfigProps['otherNodes'];
+  testResults: ConfigProps['testResults'];
+}) {
+  const looksLikeExpression = value.includes('{{');
+  const [expressionMode, setExpressionMode] = useState(!hasCredential || looksLikeExpression);
+  const [filter, setFilter] = useState('');
+
+  useEffect(() => {
+    // Fall back to expression mode when credential is cleared
+    if (!hasCredential) { setExpressionMode(true); return; }
+    // Auto-switch to picker mode once items have loaded and value isn't an expression
+    if (hasCredential && items.length > 0 && !value.includes('{{')) {
+      setExpressionMode(false);
+    }
+  }, [hasCredential, items.length, value]);
+
+  const filtered = items.filter((i) =>
+    i.display.toLowerCase().includes(filter.toLowerCase())
+  );
+  const selected = items.find((i) => i.id === value);
+
+  if (!hasCredential || expressionMode) {
+    return (
+      <div className="space-y-1">
+        <div className="flex items-center justify-between">
+          <span className="block text-xs font-medium text-slate-400">{label}</span>
+          {hasCredential && (
+            <button
+              type="button"
+              onClick={() => setExpressionMode(false)}
+              className="text-[10px] text-violet-400 hover:text-violet-300 transition-colors"
+            >
+              Pick from list
+            </button>
+          )}
+        </div>
+        <ExpressionInput
+          label=""
+          value={value}
+          onChange={onChange}
+          placeholder={placeholder}
+          nodes={otherNodes}
+          testResults={testResults}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between">
+        <span className="block text-xs font-medium text-slate-400">{label}</span>
+        <button
+          type="button"
+          onClick={() => setExpressionMode(true)}
+          className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors"
+        >
+          Use expression
+        </button>
+      </div>
+
+      {isLoading && (
+        <div className="flex items-center gap-1.5 text-[10px] text-slate-500 py-1">
+          <Loader2 className="w-3 h-3 animate-spin" /> Loading…
+        </div>
+      )}
+
+      {isError && (
+        <p className="text-[10px] text-red-400">
+          Failed to load. <button type="button" className="underline" onClick={() => setExpressionMode(true)}>Enter manually.</button>
+        </p>
+      )}
+
+      {!isLoading && !isError && (
+        <div className="space-y-1">
+          {/* Search box */}
+          <input
+            type="text"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Search…"
+            className="w-full bg-slate-800 border border-slate-600 text-slate-200 rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-violet-500 placeholder-slate-500"
+          />
+          {/* Scrollable list */}
+          <div className="max-h-36 overflow-y-auto rounded-md border border-slate-600 bg-slate-800 divide-y divide-slate-700">
+            {filtered.length === 0 && (
+              <p className="text-[10px] text-slate-500 px-2.5 py-2">No results.</p>
+            )}
+            {filtered.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => { onChange(item.id); setFilter(''); }}
+                className={`w-full text-left px-2.5 py-1.5 text-xs transition-colors ${
+                  item.id === value
+                    ? 'bg-violet-600/30 text-violet-300'
+                    : 'text-slate-300 hover:bg-slate-700'
+                }`}
+              >
+                {renderItem(item)}
+              </button>
+            ))}
+          </div>
+          {/* Selected value badge */}
+          {selected && (
+            <p className="text-[10px] text-slate-500 truncate">
+              Selected: <span className="text-slate-300">{renderItem(selected)}</span>
+              <span className="ml-1 text-slate-600">({selected.id})</span>
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── SlackConfig ────────────────────────────────────────────────────────────────
 
 function SlackConfig({ cfg, onChange, otherNodes, testResults }: ConfigProps) {
-  const action = (cfg.action as string) ?? 'send_message';
+  const action      = (cfg.action as string) ?? 'send_message';
+  const credentialId = String(cfg.credentialId ?? '');
+
+  const {
+    channels, missingScopes,
+    isLoading: loadingChannels, isError: errorChannels,
+  } = useSlackChannels(credentialId);
+  const { data: users = [],    isLoading: loadingUsers,    isError: errorUsers }    =
+    useSlackUsers(credentialId);
+
+  const channelItems = channels.map((c) => ({
+    id:      c.id!,
+    // prefix: private channels get 🔒, non-member public channels get "(not joined)"
+    display: c.isPrivate
+      ? `🔒 ${c.name}`
+      : c.isMember
+        ? c.name!
+        : `${c.name} (not joined)`,
+  }));
+  const userItems = users.map((u) => ({
+    id:      u.id!,
+    display: u.displayName || u.realName || u.name,
+  }));
+
   return (
     <div className="space-y-3">
       <SlackCredentialSelect
-        value={String(cfg.credentialId ?? '')}
+        value={credentialId}
         onChange={(id) => onChange({ credentialId: id })}
       />
+
+      {/* Reconnect hint when the stored token is missing required scopes */}
+      {credentialId && missingScopes.length > 0 && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-2">
+          <AlertCircle className="w-3.5 h-3.5 text-amber-400 mt-0.5 shrink-0" />
+          <p className="text-[10px] text-amber-300 leading-relaxed">
+            Private channels are hidden because your token is missing{' '}
+            <code className="font-mono bg-amber-500/20 px-0.5 rounded">
+              {missingScopes.join(', ')}
+            </code>
+            . Add it in your Slack app under <strong>OAuth &amp; Permissions → User Token Scopes</strong>,
+            then reconnect your workspace from the Credentials panel.
+          </p>
+        </div>
+      )}
+
       <Select
         label="Action"
         value={action}
@@ -1991,23 +2177,33 @@ function SlackConfig({ cfg, onChange, otherNodes, testResults }: ConfigProps) {
       />
 
       {(action === 'send_message' || action === 'upload_file' || action === 'read_messages') && (
-        <ExpressionInput
+        <SlackResourceSelect
           label="Channel"
           value={String(cfg.channel ?? '')}
           onChange={(v) => onChange({ channel: v })}
-          placeholder="C1234567890 or #general"
-          nodes={otherNodes}
+          items={channelItems}
+          isLoading={loadingChannels}
+          isError={errorChannels}
+          placeholder="C1234567890 or {{nodes.x.channel}}"
+          renderItem={(item) => `#${item.display}`}
+          hasCredential={!!credentialId}
+          otherNodes={otherNodes}
           testResults={testResults}
         />
       )}
 
       {action === 'send_dm' && (
-        <ExpressionInput
-          label="User ID"
+        <SlackResourceSelect
+          label="User"
           value={String(cfg.userId ?? '')}
           onChange={(v) => onChange({ userId: v })}
-          placeholder="U1234567890"
-          nodes={otherNodes}
+          items={userItems}
+          isLoading={loadingUsers}
+          isError={errorUsers}
+          placeholder="U1234567890 or {{nodes.x.userId}}"
+          renderItem={(item) => `@${item.display}`}
+          hasCredential={!!credentialId}
+          otherNodes={otherNodes}
           testResults={testResults}
         />
       )}

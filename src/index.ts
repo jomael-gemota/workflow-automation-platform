@@ -31,6 +31,7 @@ import { webhookRoutes } from './routes/webhooks';
 import { apiKeyRoutes } from './routes/apiKeys';
 import { oauthRoutes } from './routes/oauthRoutes';
 import { credentialRoutes } from './routes/credentialRoutes';
+import { slackDataRoutes } from './routes/slackDataRoutes';
 
 import { connectDatabase } from './db/database';
 import { getBaseUrl } from './utils/baseUrl';
@@ -121,6 +122,7 @@ async function bootstrap() {
     await fastify.register(apiKeyRoutes,     { prefix: '/api' });
     await fastify.register(oauthRoutes,      { prefix: '/api', googleAuth, slackAuth, credentialRepo });
     await fastify.register(credentialRoutes, { prefix: '/api', credentialRepo });
+    await fastify.register(slackDataRoutes,  { prefix: '/api', slackAuth });
 
     // 6. Health check
     fastify.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
