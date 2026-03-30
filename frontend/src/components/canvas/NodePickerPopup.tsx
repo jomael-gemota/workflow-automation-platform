@@ -56,7 +56,8 @@ const CATEGORIES: PaletteCategory[] = [
       { type: 'gdrive',  label: 'Google Drive',  description: 'Manage files & folders'                },
       { type: 'gdocs',   label: 'Google Docs',   description: 'Create & edit documents'               },
       { type: 'gsheets', label: 'Google Sheets', description: 'Read & write spreadsheets'             },
-      { type: 'slack',   label: 'Slack',         description: 'Send messages, DMs, upload files, read channels' },
+      { type: 'slack',   label: 'Slack',              description: 'Send messages, DMs, upload files, read channels' },
+      { type: 'teams',   label: 'Microsoft Teams',     description: 'Send messages, DMs, read channel messages' },
     ],
   },
 ];

@@ -17,6 +17,7 @@ import { GDriveNode } from './nodes/GDriveNode';
 import { GDocsNode } from './nodes/GDocsNode';
 import { GSheetsNode } from './nodes/GSheetsNode';
 import { SlackNode } from './nodes/SlackNode';
+import { TeamsNode } from './nodes/TeamsNode';
 
 import { WorkflowRepository } from './repositories/WorkflowRepository';
 import { ExecutionRepository } from './repositories/ExecutionRepository';
@@ -24,6 +25,7 @@ import { CredentialRepository } from './repositories/CredentialRepository';
 import { WorkflowService } from './services/WorkflowService';
 import { GoogleAuthService } from './services/GoogleAuthService';
 import { SlackAuthService } from './services/SlackAuthService';
+import { TeamsAuthService } from './services/TeamsAuthService';
 
 import { workflowRoutes } from './routes/workflows';
 import { executionRoutes } from './routes/executions';
@@ -32,6 +34,7 @@ import { apiKeyRoutes } from './routes/apiKeys';
 import { oauthRoutes } from './routes/oauthRoutes';
 import { credentialRoutes } from './routes/credentialRoutes';
 import { slackDataRoutes } from './routes/slackDataRoutes';
+import { teamsDataRoutes } from './routes/teamsDataRoutes';
 
 import { connectDatabase } from './db/database';
 import { getBaseUrl } from './utils/baseUrl';
@@ -71,11 +74,13 @@ async function bootstrap() {
     const credentialRepo  = new CredentialRepository();
     const googleAuth      = new GoogleAuthService(credentialRepo);
     const slackAuth       = new SlackAuthService(credentialRepo);
+    const teamsAuth       = new TeamsAuthService(credentialRepo);
     registry.register('gmail',   new GmailNode(googleAuth));
     registry.register('gdrive',  new GDriveNode(googleAuth));
     registry.register('gdocs',   new GDocsNode(googleAuth));
     registry.register('gsheets', new GSheetsNode(googleAuth));
     registry.register('slack',   new SlackNode(slackAuth));
+    registry.register('teams',   new TeamsNode(teamsAuth));
     const workflowService = new WorkflowService(runner, workflowRepo, executionRepo);
 
 	await runSeeds(workflowRepo);
@@ -120,9 +125,10 @@ async function bootstrap() {
     await fastify.register(executionRoutes,  { prefix: '/api', executionRepo, workflowService });
     await fastify.register(webhookRoutes,    { workflowService, workflowRepo });   // no prefix — called by external systems
     await fastify.register(apiKeyRoutes,     { prefix: '/api' });
-    await fastify.register(oauthRoutes,      { prefix: '/api', googleAuth, slackAuth, credentialRepo });
+    await fastify.register(oauthRoutes,      { prefix: '/api', googleAuth, slackAuth, teamsAuth, credentialRepo });
     await fastify.register(credentialRoutes, { prefix: '/api', credentialRepo });
     await fastify.register(slackDataRoutes,  { prefix: '/api', slackAuth });
+    await fastify.register(teamsDataRoutes,  { prefix: '/api', teamsAuth });
 
     // 6. Health check
     fastify.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));

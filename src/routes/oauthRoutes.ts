@@ -1,14 +1,15 @@
 import { FastifyInstance } from 'fastify';
 import { GoogleAuthService } from '../services/GoogleAuthService';
 import { SlackAuthService } from '../services/SlackAuthService';
+import { TeamsAuthService } from '../services/TeamsAuthService';
 import { CredentialRepository } from '../repositories/CredentialRepository';
 import { getBaseUrl } from '../utils/baseUrl';
 
 export async function oauthRoutes(
     fastify: FastifyInstance,
-    options: { googleAuth: GoogleAuthService; slackAuth: SlackAuthService; credentialRepo: CredentialRepository }
+    options: { googleAuth: GoogleAuthService; slackAuth: SlackAuthService; teamsAuth: TeamsAuthService; credentialRepo: CredentialRepository }
 ): Promise<void> {
-    const { googleAuth, slackAuth, credentialRepo } = options;
+    const { googleAuth, slackAuth, teamsAuth, credentialRepo } = options;
 
     /** Check whether Google OAuth is configured */
     fastify.get('/oauth/google/status', async (_request, reply) => {
@@ -111,6 +112,51 @@ export async function oauthRoutes(
             } catch (err) {
                 const msg = err instanceof Error ? err.message : 'oauth_error';
                 fastify.log.error(err, 'Slack OAuth callback failed');
+                return reply.redirect(`${frontendBase}?oauth_error=${encodeURIComponent(msg)}`);
+            }
+        }
+    );
+
+    // ── Microsoft Teams OAuth ──────────────────────────────────────────────────
+
+    /** Check whether Teams OAuth is configured */
+    fastify.get('/oauth/teams/status', async (_request, reply) => {
+        const configured  = teamsAuth.isConfigured();
+        const redirectUri = process.env.TEAMS_REDIRECT_URI ?? `${getBaseUrl()}/api/oauth/teams/callback`;
+        return reply.code(200).send({ configured, redirectUri });
+    });
+
+    /** Redirect browser to Microsoft consent page */
+    fastify.get('/oauth/teams/authorize', async (_request, reply) => {
+        if (!teamsAuth.isConfigured()) {
+            const msg = encodeURIComponent(
+                'Teams OAuth is not configured. Add TEAMS_CLIENT_ID and TEAMS_CLIENT_SECRET to your .env file.'
+            );
+            const frontendBase = process.env.CORS_ORIGIN ?? 'http://localhost:5173';
+            return reply.redirect(`${frontendBase}?oauth_error=${msg}`);
+        }
+        const url = teamsAuth.getAuthorizationUrl();
+        return reply.redirect(url);
+    });
+
+    /** Microsoft redirects here after the user approves */
+    fastify.get<{ Querystring: { code?: string; error?: string; error_description?: string } }>(
+        '/oauth/teams/callback',
+        async (request, reply) => {
+            const { code, error, error_description } = request.query;
+            const frontendBase = process.env.CORS_ORIGIN ?? 'http://localhost:5173';
+
+            if (error || !code) {
+                const msg = error_description ?? error ?? 'missing_code';
+                return reply.redirect(`${frontendBase}?oauth_error=${encodeURIComponent(msg)}`);
+            }
+
+            try {
+                await teamsAuth.handleCallback(code);
+                return reply.redirect(`${frontendBase}?oauth_success=teams`);
+            } catch (err) {
+                const msg = err instanceof Error ? err.message : 'oauth_error';
+                fastify.log.error(err, 'Teams OAuth callback failed');
                 return reply.redirect(`${frontendBase}?oauth_error=${encodeURIComponent(msg)}`);
             }
         }

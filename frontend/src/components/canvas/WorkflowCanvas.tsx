@@ -31,6 +31,7 @@ import { GDriveNodeWidget } from '../nodes/GDriveNodeWidget';
 import { GDocsNodeWidget } from '../nodes/GDocsNodeWidget';
 import { GSheetsNodeWidget } from '../nodes/GSheetsNodeWidget';
 import { SlackNodeWidget } from '../nodes/SlackNodeWidget';
+import { TeamsNodeWidget } from '../nodes/TeamsNodeWidget';
 import type { NodeType } from '../../types/workflow';
 
 function randomId() {
@@ -53,6 +54,7 @@ function WorkflowNodeRenderer(props: NodeProps) {
     case 'gdocs':   return <GDocsNodeWidget   {...p} />;
     case 'gsheets': return <GSheetsNodeWidget {...p} />;
     case 'slack':   return <SlackNodeWidget   {...p} />;
+    case 'teams':   return <TeamsNodeWidget   {...p} />;
     default: return null;
   }
 }
@@ -72,6 +74,7 @@ const DEFAULT_CONFIGS: Partial<Record<NodeType, Record<string, unknown>>> = {
   gdocs:   { action: 'read',   credentialId: '', documentId: '' },
   gsheets: { action: 'read',   credentialId: '', spreadsheetId: '', range: 'Sheet1!A1:Z100' },
   slack:   { action: 'send_message', credentialId: '', channel: '', text: '' },
+  teams:   { action: 'send_message', credentialId: '', teamId: '', channelId: '', text: '' },
 };
 
 function resolveEdgeStatus(

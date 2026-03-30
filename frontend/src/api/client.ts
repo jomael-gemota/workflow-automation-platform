@@ -166,6 +166,16 @@ export function checkSlackConfig() {
   return request<{ configured: boolean; redirectUri: string }>('/oauth/slack/status');
 }
 
+/** Redirects the browser to Microsoft's OAuth consent page */
+export function startTeamsOAuth() {
+  window.location.href = `${BASE}/oauth/teams/authorize`;
+}
+
+/** Check whether Teams OAuth is configured on the backend */
+export function checkTeamsConfig() {
+  return request<{ configured: boolean; redirectUri: string }>('/oauth/teams/status');
+}
+
 // ── Slack workspace data ──────────────────────────────────────
 
 export interface SlackChannel {
@@ -193,4 +203,47 @@ export function listSlackChannels(credentialId: string) {
 
 export function listSlackUsers(credentialId: string) {
   return request<SlackUser[]>(`/slack/users?credentialId=${encodeURIComponent(credentialId)}`);
+}
+
+// ── Microsoft Teams data ──────────────────────────────────────
+
+export interface TeamsTeam {
+  id: string;
+  displayName: string;
+  description: string | null;
+}
+
+export interface TeamsChannel {
+  id: string;
+  displayName: string;
+  membershipType: string;
+}
+
+export interface TeamsUser {
+  id: string;
+  displayName: string;
+  mail: string;
+  userPrincipalName: string;
+}
+
+export interface TeamsTeamsResponse {
+  teams: TeamsTeam[];
+}
+
+export interface TeamsChannelsResponse {
+  channels: TeamsChannel[];
+}
+
+export function listTeamsTeams(credentialId: string) {
+  return request<TeamsTeamsResponse>(`/teams/teams?credentialId=${encodeURIComponent(credentialId)}`);
+}
+
+export function listTeamsChannels(credentialId: string, teamId: string) {
+  return request<TeamsChannelsResponse>(
+    `/teams/channels?credentialId=${encodeURIComponent(credentialId)}&teamId=${encodeURIComponent(teamId)}`
+  );
+}
+
+export function listTeamsUsers(credentialId: string) {
+  return request<TeamsUser[]>(`/teams/users?credentialId=${encodeURIComponent(credentialId)}`);
 }

@@ -8,6 +8,7 @@ import type { NodeTestResult } from '../../types/workflow';
 import { useCredentialList } from '../../hooks/useCredentials';
 import { useSaveWorkflow } from '../../hooks/useSaveWorkflow';
 import { useSlackChannels, useSlackUsers } from '../../hooks/useSlackData';
+import { useTeamsTeams, useTeamsChannels, useTeamsUsers } from '../../hooks/useTeamsData';
 import { NodeIcon } from '../nodes/NodeIcons';
 
 // ── Output field catalogue (human-friendly labels per node type) ──────────────
@@ -1235,6 +1236,9 @@ export function NodeConfigPanel() {
       {nodeType === 'slack' && (
         <SlackConfig cfg={cfg} onChange={updateConfig} otherNodes={otherNodes} testResults={testResults} />
       )}
+      {nodeType === 'teams' && (
+        <TeamsConfig cfg={cfg} onChange={updateConfig} otherNodes={otherNodes} testResults={testResults} />
+      )}
 
       {/* Retry & Timeout */}
       <div className="border-t border-slate-700" />
@@ -2309,6 +2313,244 @@ function GSheetsConfig({ cfg, onChange, otherNodes, testResults }: ConfigProps) 
             ]}
           />
         </>
+      )}
+    </div>
+  );
+}
+
+// ── Teams credential helper ────────────────────────────────────────────────────
+
+function TeamsCredentialSelect({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const { data: credentials = [], isLoading } = useCredentialList();
+  const teamsCreds = credentials.filter((c) => c.provider === 'teams');
+  return (
+    <div className="space-y-1">
+      <label className="block text-xs font-medium text-slate-400">Microsoft Account</label>
+      {isLoading ? (
+        <p className="text-[10px] text-slate-500">Loading accounts…</p>
+      ) : teamsCreds.length === 0 ? (
+        <p className="text-[10px] text-amber-400">
+          No Microsoft accounts connected. Click <strong>Credentials</strong> in the toolbar to connect one.
+        </p>
+      ) : (
+        <Select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          options={[
+            { value: '', label: '— select account —' },
+            ...teamsCreds.map((c) => ({ value: c.id, label: c.label })),
+          ]}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── TeamsConfig ────────────────────────────────────────────────────────────────
+
+function TeamsConfig({ cfg, onChange, otherNodes, testResults }: ConfigProps) {
+  const action       = (cfg.action as string) ?? 'send_message';
+  const credentialId = String(cfg.credentialId ?? '');
+  const teamId       = String(cfg.teamId ?? '');
+  const channelId    = String(cfg.channelId ?? '');
+
+  const { teams,    isLoading: loadingTeams,    isError: errorTeams }    = useTeamsTeams(credentialId);
+  const { channels, isLoading: loadingChannels, isError: errorChannels } = useTeamsChannels(credentialId, teamId);
+  const { data: users = [], isLoading: loadingUsers, isError: errorUsers } = useTeamsUsers(credentialId);
+
+  const teamItems = teams.map((t) => ({ id: t.id, display: t.displayName }));
+  const channelItems = channels.map((c) => ({
+    id:      c.id,
+    display: c.membershipType === 'private' ? `🔒 ${c.displayName}` : c.displayName,
+  }));
+  const userItems = users.map((u) => ({
+    id:      u.id,
+    display: u.displayName || u.mail || u.userPrincipalName,
+  }));
+
+  const needsTeamChannel = action === 'send_message' || action === 'read_messages';
+
+  return (
+    <div className="space-y-3">
+      <TeamsCredentialSelect
+        value={credentialId}
+        onChange={(id) => onChange({ credentialId: id, teamId: '', channelId: '' })}
+      />
+
+      <Select
+        label="Action"
+        value={action}
+        onChange={(e) => onChange({ action: e.target.value })}
+        options={[
+          { value: 'send_message',  label: 'Send Channel Message' },
+          { value: 'send_dm',       label: 'Send Direct Message' },
+          { value: 'read_messages', label: 'Read Channel Messages' },
+        ]}
+      />
+
+      {needsTeamChannel && (
+        <>
+          {/* Team picker */}
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="block text-xs font-medium text-slate-400">Team</span>
+            </div>
+            {!credentialId ? (
+              <p className="text-[10px] text-slate-500">Select an account first.</p>
+            ) : loadingTeams ? (
+              <div className="flex items-center gap-1.5 text-[10px] text-slate-500 py-1">
+                <Loader2 className="w-3 h-3 animate-spin" /> Loading teams…
+              </div>
+            ) : errorTeams ? (
+              <p className="text-[10px] text-red-400">Failed to load teams.</p>
+            ) : (
+              <div className="max-h-36 overflow-y-auto rounded-md border border-slate-600 bg-slate-800 divide-y divide-slate-700">
+                {teamItems.length === 0 && (
+                  <p className="text-[10px] text-slate-500 px-2.5 py-2">No teams found.</p>
+                )}
+                {teamItems.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => onChange({ teamId: item.id, channelId: '' })}
+                    className={`w-full text-left px-2.5 py-1.5 text-xs transition-colors ${
+                      item.id === teamId
+                        ? 'bg-blue-600/30 text-blue-300'
+                        : 'text-slate-300 hover:bg-slate-700'
+                    }`}
+                  >
+                    {item.display}
+                  </button>
+                ))}
+              </div>
+            )}
+            {teamId && teams.length > 0 && (
+              <p className="text-[10px] text-slate-500 truncate">
+                Selected: <span className="text-slate-300">{teams.find((t) => t.id === teamId)?.displayName ?? teamId}</span>
+              </p>
+            )}
+          </div>
+
+          {/* Channel picker — shown only once a team is selected */}
+          {teamId && (
+            <div className="space-y-1">
+              <span className="block text-xs font-medium text-slate-400">Channel</span>
+              {loadingChannels ? (
+                <div className="flex items-center gap-1.5 text-[10px] text-slate-500 py-1">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Loading channels…
+                </div>
+              ) : errorChannels ? (
+                <p className="text-[10px] text-red-400">Failed to load channels.</p>
+              ) : (
+                <div className="max-h-36 overflow-y-auto rounded-md border border-slate-600 bg-slate-800 divide-y divide-slate-700">
+                  {channelItems.length === 0 && (
+                    <p className="text-[10px] text-slate-500 px-2.5 py-2">No channels found.</p>
+                  )}
+                  {channelItems.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => onChange({ channelId: item.id })}
+                      className={`w-full text-left px-2.5 py-1.5 text-xs transition-colors ${
+                        item.id === channelId
+                          ? 'bg-blue-600/30 text-blue-300'
+                          : 'text-slate-300 hover:bg-slate-700'
+                      }`}
+                    >
+                      {item.display}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {channelId && channels.length > 0 && (
+                <p className="text-[10px] text-slate-500 truncate">
+                  Selected: <span className="text-slate-300">{channels.find((c) => c.id === channelId)?.displayName ?? channelId}</span>
+                </p>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {action === 'send_dm' && (
+        <div className="space-y-1">
+          <span className="block text-xs font-medium text-slate-400">User</span>
+          {!credentialId ? (
+            <p className="text-[10px] text-slate-500">Select an account first.</p>
+          ) : loadingUsers ? (
+            <div className="flex items-center gap-1.5 text-[10px] text-slate-500 py-1">
+              <Loader2 className="w-3 h-3 animate-spin" /> Loading users…
+            </div>
+          ) : errorUsers ? (
+            <ExpressionInput
+              label=""
+              value={String(cfg.userId ?? '')}
+              onChange={(v) => onChange({ userId: v })}
+              placeholder="User ID or {{nodes.x.userId}}"
+              nodes={otherNodes}
+              testResults={testResults}
+            />
+          ) : (
+            <>
+              <div className="max-h-36 overflow-y-auto rounded-md border border-slate-600 bg-slate-800 divide-y divide-slate-700">
+                {userItems.length === 0 && (
+                  <p className="text-[10px] text-slate-500 px-2.5 py-2">No users found.</p>
+                )}
+                {userItems.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => onChange({ userId: item.id })}
+                    className={`w-full text-left px-2.5 py-1.5 text-xs transition-colors ${
+                      item.id === (cfg.userId as string)
+                        ? 'bg-blue-600/30 text-blue-300'
+                        : 'text-slate-300 hover:bg-slate-700'
+                    }`}
+                  >
+                    {item.display}
+                  </button>
+                ))}
+              </div>
+              {cfg.userId && users.length > 0 && (
+                <p className="text-[10px] text-slate-500 truncate">
+                  Selected: <span className="text-slate-300">{users.find((u) => u.id === cfg.userId)?.displayName ?? String(cfg.userId)}</span>
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {(action === 'send_message' || action === 'send_dm') && (
+        <ExpressionTextArea
+          label="Message Text"
+          value={String(cfg.text ?? '')}
+          onChange={(v) => onChange({ text: v })}
+          placeholder="Hello from your workflow!"
+          nodes={otherNodes}
+          testResults={testResults}
+          rows={3}
+        />
+      )}
+
+      {action === 'read_messages' && (
+        <div className="space-y-1">
+          <label className="block text-xs font-medium text-slate-400">Message limit</label>
+          <input
+            type="number"
+            min={1}
+            max={50}
+            value={String(cfg.limit ?? 10)}
+            onChange={(e) => onChange({ limit: Number(e.target.value) })}
+            className="w-full bg-slate-800 border border-slate-600 text-slate-200 rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+        </div>
       )}
     </div>
   );

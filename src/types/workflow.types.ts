@@ -10,7 +10,8 @@ export type NodeType =
     | 'gdrive'
     | 'gdocs'
     | 'gsheets'
-    | 'slack';
+    | 'slack'
+    | 'teams';
 
 export interface WorkflowNode {
     id: string;

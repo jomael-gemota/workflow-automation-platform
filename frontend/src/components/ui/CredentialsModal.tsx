@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { X, Plus, Trash2, Loader2, CheckCircle2, AlertCircle, ExternalLink, Settings, MessageSquare } from 'lucide-react';
+import { X, Plus, Trash2, Loader2, CheckCircle2, AlertCircle, ExternalLink, Settings, MessageSquare, Users } from 'lucide-react';
 import { useCredentialList, useDeleteCredential } from '../../hooks/useCredentials';
-import { startGoogleOAuth, checkGoogleConfig, startSlackOAuth, checkSlackConfig } from '../../api/client';
+import { startGoogleOAuth, checkGoogleConfig, startSlackOAuth, checkSlackConfig, startTeamsOAuth, checkTeamsConfig } from '../../api/client';
 import { ConfirmModal } from './ConfirmModal';
 import type { CredentialSummary } from '../../types/workflow';
 import { useQuery } from '@tanstack/react-query';
@@ -34,9 +34,16 @@ export function CredentialsModal({ open, onClose }: CredentialsModalProps) {
     enabled: open,
     staleTime: 30_000,
   });
+  const { data: teamsConfig } = useQuery({
+    queryKey: ['teams-config'],
+    queryFn: checkTeamsConfig,
+    enabled: open,
+    staleTime: 30_000,
+  });
 
   const isGoogleConfigured = googleConfig?.configured ?? true;
   const isSlackConfigured  = slackConfig?.configured  ?? true;
+  const isTeamsConfigured  = teamsConfig?.configured  ?? true;
 
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [oauthStatus, setOAuthStatus] = useState<'success' | 'error' | null>(null);
@@ -52,6 +59,8 @@ export function CredentialsModal({ open, onClose }: CredentialsModalProps) {
       setOauthMessage(
         provider === 'slack'
           ? 'Slack workspace connected successfully!'
+          : provider === 'teams'
+          ? 'Microsoft Teams account connected successfully!'
           : 'Google account connected successfully!'
       );
       const clean = window.location.pathname;
@@ -78,6 +87,7 @@ export function CredentialsModal({ open, onClose }: CredentialsModalProps) {
   const pendingCred = credentials.find((c) => c.id === pendingDeleteId);
   const googleCreds = credentials.filter((c) => c.provider === 'google');
   const slackCreds  = credentials.filter((c) => c.provider === 'slack');
+  const teamsCreds  = credentials.filter((c) => c.provider === 'teams');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -89,7 +99,7 @@ export function CredentialsModal({ open, onClose }: CredentialsModalProps) {
           <div className="flex-1 min-w-0">
             <h2 className="text-sm font-semibold text-white">Connected Accounts</h2>
             <p className="text-[11px] text-slate-500 mt-0.5">
-              Manage credentials for Google Workspace and Slack integrations.
+              Manage credentials for Google Workspace, Slack, and Microsoft Teams integrations.
             </p>
           </div>
           <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors">
@@ -242,6 +252,66 @@ SLACK_REDIRECT_URI=http://localhost:3000/oauth/slack/callback`}
               <CredentialRow key={cred.id} cred={cred} onDelete={() => setPendingDeleteId(cred.id)} />
             ))}
           </div>
+
+          {/* ── Divider ── */}
+          <div className="border-t border-slate-700" />
+
+          {/* ── Microsoft Teams section ── */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-blue-400" />
+                <span className="text-xs font-semibold text-slate-300">Microsoft Teams</span>
+              </div>
+              {isTeamsConfigured ? (
+                <button
+                  onClick={startTeamsOAuth}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-700 hover:bg-blue-600 text-white text-[11px] font-medium rounded-lg transition-colors"
+                >
+                  <Plus className="w-3 h-3" />
+                  Connect Account
+                </button>
+              ) : (
+                <span className="text-[10px] text-amber-400 flex items-center gap-1">
+                  <Settings className="w-3 h-3" />
+                  Not configured
+                </span>
+              )}
+            </div>
+
+            {!isTeamsConfigured && (
+              <div className="flex items-start gap-2.5 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                <Settings className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-1 min-w-0">
+                  <p className="text-[11px] text-amber-400/80 leading-relaxed">
+                    Add these to your <code className="bg-amber-900/40 px-1 rounded">.env</code> file and restart the backend:
+                  </p>
+                  <pre className="text-[10px] text-amber-300/90 bg-slate-900 rounded p-2 mt-1.5 leading-relaxed overflow-x-auto">
+{`TEAMS_CLIENT_ID=your-client-id
+TEAMS_CLIENT_SECRET=your-secret
+TEAMS_TENANT_ID=common
+TEAMS_REDIRECT_URI=http://localhost:3000/api/oauth/teams/callback`}
+                  </pre>
+                  <a
+                    href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-1 text-[11px] text-blue-400 hover:text-blue-300 transition-colors"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    Register an app in Azure portal
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {!isLoading && teamsCreds.length === 0 && isTeamsConfigured && (
+              <p className="text-[11px] text-slate-500 pl-1">No Microsoft accounts connected yet.</p>
+            )}
+            {teamsCreds.map((cred) => (
+              <CredentialRow key={cred.id} cred={cred} onDelete={() => setPendingDeleteId(cred.id)} />
+            ))}
+          </div>
         </div>
       </div>
 
@@ -265,22 +335,26 @@ SLACK_REDIRECT_URI=http://localhost:3000/oauth/slack/callback`}
 }
 
 function CredentialRow({ cred, onDelete }: { cred: CredentialSummary; onDelete: () => void }) {
-  const isSlack = cred.provider === 'slack';
-  const serviceLabels = isSlack
-    ? []
-    : cred.scopes.map((s) => GOOGLE_SERVICE_LABELS[s]).filter(Boolean);
-  const displayName = isSlack ? cred.label : cred.email;
+  const isSlack  = cred.provider === 'slack';
+  const isTeams  = cred.provider === 'teams';
+  const isGoogle = cred.provider === 'google';
+  const serviceLabels = isGoogle
+    ? cred.scopes.map((s) => GOOGLE_SERVICE_LABELS[s]).filter(Boolean)
+    : [];
+  const displayName = isGoogle ? cred.email : cred.label;
 
   return (
     <div className="flex items-start gap-3 bg-slate-700/40 border border-slate-600/40 rounded-lg px-3.5 py-3">
       {isSlack
         ? <MessageSquare className="w-5 h-5 text-violet-400 shrink-0 mt-0.5" />
+        : isTeams
+        ? <Users className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
         : <GoogleIcon className="w-5 h-5 shrink-0 mt-0.5" />
       }
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-white truncate">{displayName}</p>
         <p className="text-[11px] text-slate-500 mt-0.5">
-          {!isSlack && cred.label !== cred.email ? `Label: ${cred.label} · ` : ''}
+          {isGoogle && cred.label !== cred.email ? `Label: ${cred.label} · ` : ''}
           Connected {new Date(cred.createdAt).toLocaleDateString()}
         </p>
         {serviceLabels.length > 0 && (

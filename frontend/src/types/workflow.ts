@@ -10,7 +10,8 @@ export type NodeType =
   | 'gdrive'
   | 'gdocs'
   | 'gsheets'
-  | 'slack';
+  | 'slack'
+  | 'teams';
 
 export interface WorkflowNode {
   id: string;
@@ -65,7 +66,7 @@ export interface PaginatedResponse<T> {
 
 export interface CredentialSummary {
   id: string;
-  provider: 'google' | 'slack';
+  provider: 'google' | 'slack' | 'teams';
   label: string;
   email: string;
   scopes: string[];
