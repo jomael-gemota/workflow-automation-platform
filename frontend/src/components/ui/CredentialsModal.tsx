@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { X, Plus, Trash2, Loader2, CheckCircle2, AlertCircle, ExternalLink, Settings, MessageSquare, Users } from 'lucide-react';
+import { X, Plus, Trash2, Loader2, CheckCircle2, AlertCircle, ExternalLink, Settings, MessageSquare, Users, Tent } from 'lucide-react';
 import { useCredentialList, useDeleteCredential } from '../../hooks/useCredentials';
-import { startGoogleOAuth, checkGoogleConfig, startSlackOAuth, checkSlackConfig, startTeamsOAuth, checkTeamsConfig } from '../../api/client';
+import { startGoogleOAuth, checkGoogleConfig, startSlackOAuth, checkSlackConfig, startTeamsOAuth, checkTeamsConfig, startBasecampOAuth, checkBasecampConfig } from '../../api/client';
 import { ConfirmModal } from './ConfirmModal';
 import type { CredentialSummary } from '../../types/workflow';
 import { useQuery } from '@tanstack/react-query';
@@ -40,10 +40,17 @@ export function CredentialsModal({ open, onClose }: CredentialsModalProps) {
     enabled: open,
     staleTime: 30_000,
   });
+  const { data: basecampConfig } = useQuery({
+    queryKey: ['basecamp-config'],
+    queryFn: checkBasecampConfig,
+    enabled: open,
+    staleTime: 30_000,
+  });
 
-  const isGoogleConfigured = googleConfig?.configured ?? true;
-  const isSlackConfigured  = slackConfig?.configured  ?? true;
-  const isTeamsConfigured  = teamsConfig?.configured  ?? true;
+  const isGoogleConfigured   = googleConfig?.configured   ?? true;
+  const isSlackConfigured    = slackConfig?.configured    ?? true;
+  const isTeamsConfigured    = teamsConfig?.configured    ?? true;
+  const isBasecampConfigured = basecampConfig?.configured ?? true;
 
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [oauthStatus, setOAuthStatus] = useState<'success' | 'error' | null>(null);
@@ -61,6 +68,8 @@ export function CredentialsModal({ open, onClose }: CredentialsModalProps) {
           ? 'Slack workspace connected successfully!'
           : provider === 'teams'
           ? 'Microsoft Teams account connected successfully!'
+          : provider === 'basecamp'
+          ? 'Basecamp account connected successfully!'
           : 'Google account connected successfully!'
       );
       const clean = window.location.pathname;
@@ -85,9 +94,10 @@ export function CredentialsModal({ open, onClose }: CredentialsModalProps) {
   if (!open) return null;
 
   const pendingCred = credentials.find((c) => c.id === pendingDeleteId);
-  const googleCreds = credentials.filter((c) => c.provider === 'google');
-  const slackCreds  = credentials.filter((c) => c.provider === 'slack');
-  const teamsCreds  = credentials.filter((c) => c.provider === 'teams');
+  const googleCreds   = credentials.filter((c) => c.provider === 'google');
+  const slackCreds    = credentials.filter((c) => c.provider === 'slack');
+  const teamsCreds    = credentials.filter((c) => c.provider === 'teams');
+  const basecampCreds = credentials.filter((c) => c.provider === 'basecamp');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -99,7 +109,7 @@ export function CredentialsModal({ open, onClose }: CredentialsModalProps) {
           <div className="flex-1 min-w-0">
             <h2 className="text-sm font-semibold text-white">Connected Accounts</h2>
             <p className="text-[11px] text-slate-500 mt-0.5">
-              Manage credentials for Google Workspace, Slack, and Microsoft Teams integrations.
+              Manage credentials for Google Workspace, Slack, Microsoft Teams, and Basecamp integrations.
             </p>
           </div>
           <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors">
@@ -312,6 +322,64 @@ TEAMS_REDIRECT_URI=http://localhost:3000/api/oauth/teams/callback`}
               <CredentialRow key={cred.id} cred={cred} onDelete={() => setPendingDeleteId(cred.id)} />
             ))}
           </div>
+
+          {/* ── Divider ── */}
+          <div className="border-t border-slate-700" />
+
+          {/* ── Basecamp section ── */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Tent className="w-4 h-4 text-green-400" />
+                <span className="text-xs font-semibold text-slate-300">Basecamp</span>
+              </div>
+              {isBasecampConfigured ? (
+                <button
+                  onClick={startBasecampOAuth}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-green-700 hover:bg-green-600 text-white text-[11px] font-medium rounded-lg transition-colors"
+                >
+                  <Plus className="w-3 h-3" />
+                  Connect Account
+                </button>
+              ) : (
+                <span className="text-[10px] text-amber-400 flex items-center gap-1">
+                  <Settings className="w-3 h-3" />
+                  Not configured
+                </span>
+              )}
+            </div>
+
+            {!isBasecampConfigured && (
+              <div className="flex items-start gap-2.5 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                <Settings className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-1 min-w-0">
+                  <p className="text-[11px] text-amber-400/80 leading-relaxed">
+                    Add these to your <code className="bg-amber-900/40 px-1 rounded">.env</code> file and restart the backend:
+                  </p>
+                  <pre className="text-[10px] text-amber-300/90 bg-slate-900 rounded p-2 mt-1.5 leading-relaxed overflow-x-auto">
+{`BASECAMP_CLIENT_ID=your-client-id
+BASECAMP_CLIENT_SECRET=your-secret`}
+                  </pre>
+                  <a
+                    href="https://launchpad.37signals.com/integrations"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-1 text-[11px] text-blue-400 hover:text-blue-300 transition-colors"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    Register your app at launchpad.37signals.com
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {!isLoading && basecampCreds.length === 0 && isBasecampConfigured && (
+              <p className="text-[11px] text-slate-500 pl-1">No Basecamp accounts connected yet.</p>
+            )}
+            {basecampCreds.map((cred) => (
+              <CredentialRow key={cred.id} cred={cred} onDelete={() => setPendingDeleteId(cred.id)} />
+            ))}
+          </div>
         </div>
       </div>
 
@@ -335,9 +403,10 @@ TEAMS_REDIRECT_URI=http://localhost:3000/api/oauth/teams/callback`}
 }
 
 function CredentialRow({ cred, onDelete }: { cred: CredentialSummary; onDelete: () => void }) {
-  const isSlack  = cred.provider === 'slack';
-  const isTeams  = cred.provider === 'teams';
-  const isGoogle = cred.provider === 'google';
+  const isSlack    = cred.provider === 'slack';
+  const isTeams    = cred.provider === 'teams';
+  const isGoogle   = cred.provider === 'google';
+  const isBasecamp = cred.provider === 'basecamp';
   const serviceLabels = isGoogle
     ? cred.scopes.map((s) => GOOGLE_SERVICE_LABELS[s]).filter(Boolean)
     : [];
@@ -349,6 +418,8 @@ function CredentialRow({ cred, onDelete }: { cred: CredentialSummary; onDelete: 
         ? <MessageSquare className="w-5 h-5 text-violet-400 shrink-0 mt-0.5" />
         : isTeams
         ? <Users className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
+        : isBasecamp
+        ? <Tent className="w-5 h-5 text-green-400 shrink-0 mt-0.5" />
         : <GoogleIcon className="w-5 h-5 shrink-0 mt-0.5" />
       }
       <div className="flex-1 min-w-0">

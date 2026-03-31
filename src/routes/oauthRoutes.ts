@@ -2,14 +2,15 @@ import { FastifyInstance } from 'fastify';
 import { GoogleAuthService } from '../services/GoogleAuthService';
 import { SlackAuthService } from '../services/SlackAuthService';
 import { TeamsAuthService } from '../services/TeamsAuthService';
+import { BasecampAuthService } from '../services/BasecampAuthService';
 import { CredentialRepository } from '../repositories/CredentialRepository';
 import { getBaseUrl } from '../utils/baseUrl';
 
 export async function oauthRoutes(
     fastify: FastifyInstance,
-    options: { googleAuth: GoogleAuthService; slackAuth: SlackAuthService; teamsAuth: TeamsAuthService; credentialRepo: CredentialRepository }
+    options: { googleAuth: GoogleAuthService; slackAuth: SlackAuthService; teamsAuth: TeamsAuthService; basecampAuth: BasecampAuthService; credentialRepo: CredentialRepository }
 ): Promise<void> {
-    const { googleAuth, slackAuth, teamsAuth, credentialRepo } = options;
+    const { googleAuth, slackAuth, teamsAuth, basecampAuth, credentialRepo } = options;
 
     /** Check whether Google OAuth is configured */
     fastify.get('/oauth/google/status', async (_request, reply) => {
@@ -157,6 +158,47 @@ export async function oauthRoutes(
             } catch (err) {
                 const msg = err instanceof Error ? err.message : 'oauth_error';
                 fastify.log.error(err, 'Teams OAuth callback failed');
+                return reply.redirect(`${frontendBase}?oauth_error=${encodeURIComponent(msg)}`);
+            }
+        }
+    );
+
+    // ── Basecamp OAuth ─────────────────────────────────────────────────────────
+
+    fastify.get('/oauth/basecamp/status', async (_request, reply) => {
+        const configured  = basecampAuth.isConfigured();
+        const redirectUri = process.env.BASECAMP_REDIRECT_URI ?? `${getBaseUrl()}/api/oauth/basecamp/callback`;
+        return reply.code(200).send({ configured, redirectUri });
+    });
+
+    fastify.get('/oauth/basecamp/authorize', async (_request, reply) => {
+        if (!basecampAuth.isConfigured()) {
+            const msg = encodeURIComponent(
+                'Basecamp OAuth is not configured. Add BASECAMP_CLIENT_ID and BASECAMP_CLIENT_SECRET to your .env file.'
+            );
+            const frontendBase = process.env.CORS_ORIGIN ?? 'http://localhost:5173';
+            return reply.redirect(`${frontendBase}?oauth_error=${msg}`);
+        }
+        const url = basecampAuth.getAuthorizationUrl();
+        return reply.redirect(url);
+    });
+
+    fastify.get<{ Querystring: { code?: string; error?: string } }>(
+        '/oauth/basecamp/callback',
+        async (request, reply) => {
+            const { code, error } = request.query;
+            const frontendBase = process.env.CORS_ORIGIN ?? 'http://localhost:5173';
+
+            if (error || !code) {
+                return reply.redirect(`${frontendBase}?oauth_error=${encodeURIComponent(error ?? 'missing_code')}`);
+            }
+
+            try {
+                await basecampAuth.handleCallback(code);
+                return reply.redirect(`${frontendBase}?oauth_success=basecamp`);
+            } catch (err) {
+                const msg = err instanceof Error ? err.message : 'oauth_error';
+                fastify.log.error(err, 'Basecamp OAuth callback failed');
                 return reply.redirect(`${frontendBase}?oauth_error=${encodeURIComponent(msg)}`);
             }
         }

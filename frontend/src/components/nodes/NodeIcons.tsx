@@ -1,7 +1,7 @@
 /**
  * Shared node icon components used in the palette, canvas node headers, etc.
  */
-import { Globe, Sparkles, GitBranch, Shuffle, Wand2, Flag, Zap, MessageSquare, Users } from 'lucide-react';
+import { Globe, Sparkles, GitBranch, Shuffle, Wand2, Flag, Zap, MessageSquare, Users, Tent } from 'lucide-react';
 import type { NodeType } from '../../types/workflow';
 
 // ── Brand SVGs ────────────────────────────────────────────────────────────────
@@ -73,6 +73,7 @@ const NODE_HEADER_COLORS: Record<string, string> = {
   gsheets:   'bg-green-600',
   slack:     'bg-violet-600',
   teams:     'bg-blue-700',
+  basecamp:  'bg-green-700',
 };
 
 export function nodeHeaderColor(type: string): string {
@@ -94,6 +95,7 @@ export function NodeIcon({ type, size = 13 }: { type: NodeType | string; size?: 
     case 'gsheets':   return <GSheetsIcon size={size} />;
     case 'slack':     return <MessageSquare size={size} className="text-white" />;
     case 'teams':     return <Users size={size} className="text-white" />;
+    case 'basecamp':  return <Tent  size={size} className="text-white" />;
     default:          return <Sparkles  size={size} className="text-white" />;
   }
 }

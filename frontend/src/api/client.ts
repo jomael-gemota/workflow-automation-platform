@@ -247,3 +247,58 @@ export function listTeamsChannels(credentialId: string, teamId: string) {
 export function listTeamsUsers(credentialId: string) {
   return request<TeamsUser[]>(`/teams/users?credentialId=${encodeURIComponent(credentialId)}`);
 }
+
+// ── Basecamp data ──────────────────────────────────────
+
+export function startBasecampOAuth() {
+  window.location.href = `${BASE}/oauth/basecamp/authorize`;
+}
+
+export function checkBasecampConfig() {
+  return request<{ configured: boolean; redirectUri: string }>('/oauth/basecamp/status');
+}
+
+export interface BasecampProject {
+  id: number;
+  name: string;
+  description: string;
+}
+
+export interface BasecampTodolist {
+  id: number;
+  name: string;
+  todosRemaining: number;
+}
+
+export interface BasecampTodo {
+  id: number;
+  title: string;
+  completed: boolean;
+  dueOn: string | null;
+}
+
+export interface BasecampPerson {
+  id: number;
+  name: string;
+  email: string;
+}
+
+export function listBasecampProjects(credentialId: string) {
+  return request<BasecampProject[]>(`/basecamp/projects?credentialId=${encodeURIComponent(credentialId)}`);
+}
+
+export function listBasecampTodolists(credentialId: string, projectId: string) {
+  return request<BasecampTodolist[]>(
+    `/basecamp/todolists?credentialId=${encodeURIComponent(credentialId)}&projectId=${encodeURIComponent(projectId)}`
+  );
+}
+
+export function listBasecampTodos(credentialId: string, todolistId: string) {
+  return request<BasecampTodo[]>(
+    `/basecamp/todos?credentialId=${encodeURIComponent(credentialId)}&todolistId=${encodeURIComponent(todolistId)}`
+  );
+}
+
+export function listBasecampPeople(credentialId: string) {
+  return request<BasecampPerson[]>(`/basecamp/people?credentialId=${encodeURIComponent(credentialId)}`);
+}

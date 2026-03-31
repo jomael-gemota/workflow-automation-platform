@@ -1,7 +1,7 @@
 import { Schema, model, Document } from 'mongoose';
 
 export interface CredentialDocument extends Document {
-    provider: 'google' | 'slack' | 'teams';
+    provider: 'google' | 'slack' | 'teams' | 'basecamp';
     label: string;
     email: string;
     accessToken: string;
@@ -12,7 +12,7 @@ export interface CredentialDocument extends Document {
 
 const CredentialSchema = new Schema<CredentialDocument>(
     {
-        provider: { type: String, enum: ['google', 'slack', 'teams'], required: true },
+        provider: { type: String, enum: ['google', 'slack', 'teams', 'basecamp'], required: true },
         label:    { type: String, required: true },
         email:    { type: String, required: true },
         accessToken:  { type: String, required: true },

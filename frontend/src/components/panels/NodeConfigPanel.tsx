@@ -9,6 +9,7 @@ import { useCredentialList } from '../../hooks/useCredentials';
 import { useSaveWorkflow } from '../../hooks/useSaveWorkflow';
 import { useSlackChannels, useSlackUsers } from '../../hooks/useSlackData';
 import { useTeamsTeams, useTeamsChannels, useTeamsUsers } from '../../hooks/useTeamsData';
+import { useBasecampProjects, useBasecampTodolists, useBasecampTodos, useBasecampPeople } from '../../hooks/useBasecampData';
 import { NodeIcon } from '../nodes/NodeIcons';
 
 // ── Output field catalogue (human-friendly labels per node type) ──────────────
@@ -66,6 +67,14 @@ const NODE_OUTPUT_FIELDS: Record<string, OutputField[]> = {
     { key: 'rows', label: 'Raw rows array (read)' },
     { key: 'updatedRows', label: 'Rows updated (write/append)' },
   ],
+  basecamp: [
+    { key: 'id', label: 'Created/matched resource ID' },
+    { key: 'title', label: 'To-do title (create)' },
+    { key: 'status', label: 'Action status (created/posted/sent)' },
+    { key: 'completed', label: 'Completion flag (complete_todo)' },
+    { key: 'todos', label: 'To-do list (list_todos)' },
+    { key: 'count', label: 'To-do count (list_todos)' },
+  ],
 };
 
 // ── "No data" badge ───────────────────────────────────────────────────────────
@@ -106,6 +115,7 @@ const NODE_TYPE_LABEL: Record<string, string> = {
   http: 'HTTP', llm: 'AI', trigger: 'Trigger', condition: 'Condition',
   switch: 'Switch', transform: 'Transform', output: 'Output',
   gmail: 'Gmail', gdrive: 'Drive', gdocs: 'Docs', gsheets: 'Sheets',
+  basecamp: 'Basecamp',
 };
 
 function nodeTypeLabel(type: string) {
@@ -1238,6 +1248,9 @@ export function NodeConfigPanel() {
       )}
       {nodeType === 'teams' && (
         <TeamsConfig cfg={cfg} onChange={updateConfig} otherNodes={otherNodes} testResults={testResults} />
+      )}
+      {nodeType === 'basecamp' && (
+        <BasecampConfig cfg={cfg} onChange={updateConfig} otherNodes={otherNodes} testResults={testResults} />
       )}
 
       {/* Retry & Timeout */}
@@ -2550,6 +2563,409 @@ function TeamsConfig({ cfg, onChange, otherNodes, testResults }: ConfigProps) {
             onChange={(e) => onChange({ limit: Number(e.target.value) })}
             className="w-full bg-slate-800 border border-slate-600 text-slate-200 rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Basecamp credential helper ──────────────────────────────────────────────
+
+function BasecampCredentialSelect({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const { data: credentials = [], isLoading } = useCredentialList();
+  const basecampCreds = credentials.filter((c) => c.provider === 'basecamp');
+  return (
+    <div className="space-y-1">
+      <label className="block text-xs font-medium text-slate-400">Basecamp Account</label>
+      {isLoading ? (
+        <p className="text-[10px] text-slate-500">Loading accounts…</p>
+      ) : basecampCreds.length === 0 ? (
+        <p className="text-[10px] text-amber-400">
+          No Basecamp accounts connected. Click <strong>Credentials</strong> in the toolbar to connect one.
+        </p>
+      ) : (
+        <Select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          options={[
+            { value: '', label: '— select account —' },
+            ...basecampCreds.map((c) => ({ value: c.id, label: c.label })),
+          ]}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── BasecampConfig ──────────────────────────────────────────────────────────
+
+function BasecampConfig({ cfg, onChange, otherNodes, testResults }: ConfigProps) {
+  const action       = (cfg.action as string) ?? 'create_todo';
+  const credentialId = String(cfg.credentialId ?? '');
+  const projectId    = String(cfg.projectId ?? '');
+  const todolistId   = String(cfg.todolistId ?? '');
+
+  const { data: projects = [],  isLoading: loadingProjects,  isError: errorProjects }  = useBasecampProjects(credentialId);
+  const { data: todolists = [], isLoading: loadingTodolists, isError: errorTodolists } = useBasecampTodolists(credentialId, projectId);
+  const { data: todos = [],     isLoading: loadingTodos,     isError: errorTodos }     = useBasecampTodos(
+    (action === 'complete_todo') ? credentialId : '', todolistId
+  );
+  const { data: people = [],    isLoading: loadingPeople }    = useBasecampPeople(credentialId);
+
+  const needsProject  = ['create_todo', 'post_message', 'send_campfire', 'list_todos'].includes(action);
+  const needsTodolist = ['create_todo', 'list_todos'].includes(action);
+
+  return (
+    <div className="space-y-3">
+      <BasecampCredentialSelect
+        value={credentialId}
+        onChange={(id) => onChange({ credentialId: id, projectId: '', todolistId: '', todoId: '' })}
+      />
+
+      <Select
+        label="Action"
+        value={action}
+        onChange={(e) => onChange({ action: e.target.value, projectId: '', todolistId: '', todoId: '' })}
+        options={[
+          { value: 'create_todo',   label: 'Create To-Do' },
+          { value: 'complete_todo', label: 'Complete / Uncomplete a To-Do' },
+          { value: 'post_message',  label: 'Post Message' },
+          { value: 'post_comment',  label: 'Post Comment' },
+          { value: 'send_campfire', label: 'Send Campfire Message' },
+          { value: 'list_todos',    label: 'List To-Dos' },
+        ]}
+      />
+
+      {/* ── Project picker (cascading) ────────────────────────────────── */}
+      {needsProject && (
+        <div className="space-y-1">
+          <span className="block text-xs font-medium text-slate-400">Project</span>
+          {!credentialId ? (
+            <p className="text-[10px] text-slate-500">Select an account first.</p>
+          ) : loadingProjects ? (
+            <div className="flex items-center gap-1.5 text-[10px] text-slate-500 py-1">
+              <Loader2 className="w-3 h-3 animate-spin" /> Loading projects…
+            </div>
+          ) : errorProjects ? (
+            <p className="text-[10px] text-red-400">Failed to load projects.</p>
+          ) : (
+            <div className="max-h-36 overflow-y-auto rounded-md border border-slate-600 bg-slate-800 divide-y divide-slate-700">
+              {projects.length === 0 && (
+                <p className="text-[10px] text-slate-500 px-2.5 py-2">No projects found.</p>
+              )}
+              {projects.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => onChange({ projectId: String(p.id), todolistId: '', todoId: '' })}
+                  className={`w-full text-left px-2.5 py-1.5 text-xs transition-colors ${
+                    String(p.id) === projectId
+                      ? 'bg-green-600/30 text-green-300'
+                      : 'text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          )}
+          {projectId && projects.length > 0 && (
+            <p className="text-[10px] text-slate-500 truncate">
+              Selected: <span className="text-slate-300">{projects.find((p) => String(p.id) === projectId)?.name ?? projectId}</span>
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* ── To-do list picker (cascading from project) ────────────────── */}
+      {needsTodolist && projectId && (
+        <div className="space-y-1">
+          <span className="block text-xs font-medium text-slate-400">To-Do List</span>
+          {loadingTodolists ? (
+            <div className="flex items-center gap-1.5 text-[10px] text-slate-500 py-1">
+              <Loader2 className="w-3 h-3 animate-spin" /> Loading to-do lists…
+            </div>
+          ) : errorTodolists ? (
+            <p className="text-[10px] text-red-400">Failed to load to-do lists.</p>
+          ) : (
+            <div className="max-h-36 overflow-y-auto rounded-md border border-slate-600 bg-slate-800 divide-y divide-slate-700">
+              {todolists.length === 0 && (
+                <p className="text-[10px] text-slate-500 px-2.5 py-2">No to-do lists found.</p>
+              )}
+              {todolists.map((tl) => (
+                <button
+                  key={tl.id}
+                  type="button"
+                  onClick={() => onChange({ todolistId: String(tl.id), todoId: '' })}
+                  className={`w-full text-left px-2.5 py-1.5 text-xs transition-colors ${
+                    String(tl.id) === todolistId
+                      ? 'bg-green-600/30 text-green-300'
+                      : 'text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  {tl.name}
+                  {tl.todosRemaining > 0 && (
+                    <span className="ml-1.5 text-[10px] text-slate-500">({tl.todosRemaining} remaining)</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+          {todolistId && todolists.length > 0 && (
+            <p className="text-[10px] text-slate-500 truncate">
+              Selected: <span className="text-slate-300">{todolists.find((tl) => String(tl.id) === todolistId)?.name ?? todolistId}</span>
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* ── create_todo fields ────────────────────────────────────────── */}
+      {action === 'create_todo' && (
+        <>
+          <ExpressionInput
+            label="To-Do Title"
+            value={String(cfg.content ?? '')}
+            onChange={(v) => onChange({ content: v })}
+            placeholder="What needs to be done?"
+            nodes={otherNodes}
+            testResults={testResults}
+          />
+          <ExpressionTextArea
+            label="Description (optional, supports HTML)"
+            value={String(cfg.description ?? '')}
+            onChange={(v) => onChange({ description: v })}
+            placeholder="Additional details…"
+            nodes={otherNodes}
+            testResults={testResults}
+            rows={3}
+          />
+          <ExpressionInput
+            label="Due Date (optional, YYYY-MM-DD)"
+            value={String(cfg.dueOn ?? '')}
+            onChange={(v) => onChange({ dueOn: v })}
+            placeholder="2026-04-15"
+            nodes={otherNodes}
+            testResults={testResults}
+          />
+          {/* Assignees multi-select */}
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-slate-400">Assignees (optional)</label>
+            {loadingPeople ? (
+              <div className="flex items-center gap-1.5 text-[10px] text-slate-500 py-1">
+                <Loader2 className="w-3 h-3 animate-spin" /> Loading people…
+              </div>
+            ) : people.length > 0 ? (
+              <div className="max-h-32 overflow-y-auto rounded-md border border-slate-600 bg-slate-800 divide-y divide-slate-700">
+                {people.map((p) => {
+                  const currentIds = String(cfg.assigneeIds ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+                  const isSelected = currentIds.includes(String(p.id));
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => {
+                        const next = isSelected
+                          ? currentIds.filter((id) => id !== String(p.id))
+                          : [...currentIds, String(p.id)];
+                        onChange({ assigneeIds: next.join(',') });
+                      }}
+                      className={`w-full text-left px-2.5 py-1.5 text-xs transition-colors flex items-center gap-2 ${
+                        isSelected ? 'bg-green-600/20 text-green-300' : 'text-slate-300 hover:bg-slate-700'
+                      }`}
+                    >
+                      <span className={`w-3 h-3 rounded border flex items-center justify-center shrink-0 ${
+                        isSelected ? 'bg-green-600 border-green-500' : 'border-slate-500'
+                      }`}>
+                        {isSelected && <Check className="w-2 h-2 text-white" />}
+                      </span>
+                      {p.name}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <ExpressionInput
+                value={String(cfg.assigneeIds ?? '')}
+                onChange={(v) => onChange({ assigneeIds: v })}
+                placeholder="Comma-separated person IDs"
+                nodes={otherNodes}
+                testResults={testResults}
+              />
+            )}
+          </div>
+        </>
+      )}
+
+      {/* ── complete_todo fields ──────────────────────────────────────── */}
+      {action === 'complete_todo' && (
+        <>
+          {/* Optional: pick from a list if project + todolist are set */}
+          {needsProject && (
+            <div className="space-y-1">
+              <span className="block text-xs font-medium text-slate-400">Project (optional, to browse to-dos)</span>
+              {!credentialId ? (
+                <p className="text-[10px] text-slate-500">Select an account first.</p>
+              ) : loadingProjects ? (
+                <div className="flex items-center gap-1.5 text-[10px] text-slate-500 py-1">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Loading…
+                </div>
+              ) : (
+                <Select
+                  value={projectId}
+                  onChange={(e) => onChange({ projectId: e.target.value, todolistId: '', todoId: '' })}
+                  options={[
+                    { value: '', label: '— select project —' },
+                    ...projects.map((p) => ({ value: String(p.id), label: p.name })),
+                  ]}
+                />
+              )}
+            </div>
+          )}
+
+          {projectId && (
+            <div className="space-y-1">
+              <span className="block text-xs font-medium text-slate-400">To-Do List (optional)</span>
+              {loadingTodolists ? (
+                <div className="flex items-center gap-1.5 text-[10px] text-slate-500 py-1">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Loading…
+                </div>
+              ) : (
+                <Select
+                  value={todolistId}
+                  onChange={(e) => onChange({ todolistId: e.target.value, todoId: '' })}
+                  options={[
+                    { value: '', label: '— select to-do list —' },
+                    ...todolists.map((tl) => ({ value: String(tl.id), label: tl.name })),
+                  ]}
+                />
+              )}
+            </div>
+          )}
+
+          {todolistId && (
+            <div className="space-y-1">
+              <span className="block text-xs font-medium text-slate-400">To-Do</span>
+              {loadingTodos ? (
+                <div className="flex items-center gap-1.5 text-[10px] text-slate-500 py-1">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Loading to-dos…
+                </div>
+              ) : errorTodos ? (
+                <p className="text-[10px] text-red-400">Failed to load to-dos.</p>
+              ) : (
+                <div className="max-h-36 overflow-y-auto rounded-md border border-slate-600 bg-slate-800 divide-y divide-slate-700">
+                  {todos.length === 0 && (
+                    <p className="text-[10px] text-slate-500 px-2.5 py-2">No to-dos found.</p>
+                  )}
+                  {todos.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => onChange({ todoId: String(t.id) })}
+                      className={`w-full text-left px-2.5 py-1.5 text-xs transition-colors ${
+                        String(t.id) === String(cfg.todoId ?? '')
+                          ? 'bg-green-600/30 text-green-300'
+                          : 'text-slate-300 hover:bg-slate-700'
+                      }`}
+                    >
+                      {t.title}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <ExpressionInput
+            label="To-Do ID"
+            value={String(cfg.todoId ?? '')}
+            onChange={(v) => onChange({ todoId: v })}
+            placeholder="Basecamp to-do ID or pick from list above"
+            nodes={otherNodes}
+            testResults={testResults}
+            hint="You can type a to-do ID directly or pick one from the list above."
+          />
+        </>
+      )}
+
+      {/* ── post_message fields ───────────────────────────────────────── */}
+      {action === 'post_message' && (
+        <>
+          <ExpressionInput
+            label="Subject"
+            value={String(cfg.subject ?? '')}
+            onChange={(v) => onChange({ subject: v })}
+            placeholder="Message subject"
+            nodes={otherNodes}
+            testResults={testResults}
+          />
+          <ExpressionTextArea
+            label="Content (supports HTML)"
+            value={String(cfg.text ?? '')}
+            onChange={(v) => onChange({ text: v })}
+            placeholder="Your message content…"
+            nodes={otherNodes}
+            testResults={testResults}
+            rows={4}
+          />
+        </>
+      )}
+
+      {/* ── post_comment fields ───────────────────────────────────────── */}
+      {action === 'post_comment' && (
+        <>
+          <ExpressionInput
+            label="Recording ID"
+            value={String(cfg.recordingId ?? '')}
+            onChange={(v) => onChange({ recordingId: v })}
+            placeholder="Basecamp recording ID (to-do, message, etc.)"
+            nodes={otherNodes}
+            testResults={testResults}
+            hint="The ID of the to-do, message, or other item you want to comment on."
+          />
+          <ExpressionTextArea
+            label="Comment (supports HTML)"
+            value={String(cfg.text ?? '')}
+            onChange={(v) => onChange({ text: v })}
+            placeholder="Your comment…"
+            nodes={otherNodes}
+            testResults={testResults}
+            rows={3}
+          />
+        </>
+      )}
+
+      {/* ── send_campfire fields ──────────────────────────────────────── */}
+      {action === 'send_campfire' && (
+        <ExpressionTextArea
+          label="Message"
+          value={String(cfg.text ?? '')}
+          onChange={(v) => onChange({ text: v })}
+          placeholder="Your Campfire message…"
+          nodes={otherNodes}
+          testResults={testResults}
+          rows={3}
+        />
+      )}
+
+      {/* ── list_todos fields ─────────────────────────────────────────── */}
+      {action === 'list_todos' && (
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="basecamp-completed"
+            checked={Boolean(cfg.completed)}
+            onChange={(e) => onChange({ completed: e.target.checked })}
+            className="w-3.5 h-3.5 rounded"
+          />
+          <label htmlFor="basecamp-completed" className="text-xs text-slate-400">
+            Show completed to-dos only
+          </label>
         </div>
       )}
     </div>

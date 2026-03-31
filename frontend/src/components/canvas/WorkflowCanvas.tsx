@@ -32,6 +32,7 @@ import { GDocsNodeWidget } from '../nodes/GDocsNodeWidget';
 import { GSheetsNodeWidget } from '../nodes/GSheetsNodeWidget';
 import { SlackNodeWidget } from '../nodes/SlackNodeWidget';
 import { TeamsNodeWidget } from '../nodes/TeamsNodeWidget';
+import { BasecampNodeWidget } from '../nodes/BasecampNodeWidget';
 import type { NodeType } from '../../types/workflow';
 
 function randomId() {
@@ -54,7 +55,8 @@ function WorkflowNodeRenderer(props: NodeProps) {
     case 'gdocs':   return <GDocsNodeWidget   {...p} />;
     case 'gsheets': return <GSheetsNodeWidget {...p} />;
     case 'slack':   return <SlackNodeWidget   {...p} />;
-    case 'teams':   return <TeamsNodeWidget   {...p} />;
+    case 'teams':     return <TeamsNodeWidget    {...p} />;
+    case 'basecamp':  return <BasecampNodeWidget {...p} />;
     default: return null;
   }
 }
@@ -74,7 +76,8 @@ const DEFAULT_CONFIGS: Partial<Record<NodeType, Record<string, unknown>>> = {
   gdocs:   { action: 'read',   credentialId: '', documentId: '' },
   gsheets: { action: 'read',   credentialId: '', spreadsheetId: '', range: 'Sheet1!A1:Z100' },
   slack:   { action: 'send_message', credentialId: '', channel: '', text: '' },
-  teams:   { action: 'send_message', credentialId: '', teamId: '', channelId: '', text: '' },
+  teams:    { action: 'send_message', credentialId: '', teamId: '', channelId: '', text: '' },
+  basecamp: { action: 'create_todo', credentialId: '', projectId: '', todolistId: '' },
 };
 
 function resolveEdgeStatus(

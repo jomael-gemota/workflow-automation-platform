@@ -58,6 +58,7 @@ const CATEGORIES: PaletteCategory[] = [
       { type: 'gsheets', label: 'Google Sheets', description: 'Read & write spreadsheets'             },
       { type: 'slack',   label: 'Slack',              description: 'Send messages, DMs, upload files, read channels' },
       { type: 'teams',   label: 'Microsoft Teams',     description: 'Send messages, DMs, read channel messages' },
+      { type: 'basecamp', label: 'Basecamp',            description: 'To-dos, messages, comments, Campfire chat' },
     ],
   },
 ];
