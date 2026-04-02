@@ -1,9 +1,9 @@
-import { Save, Play, Loader2, LogOut, PanelRight, KeyRound, Sun, Moon } from 'lucide-react';
+import { Save, Play, Loader2, LogOut, PanelRight, KeyRound, Sun, Moon, Check } from 'lucide-react';
 import { Button } from './ui/Button';
 import { useWorkflowStore } from '../store/workflowStore';
 import { useTriggerWorkflow } from '../hooks/useWorkflows';
 import { useSaveWorkflow } from '../hooks/useSaveWorkflow';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { CredentialsModal } from './ui/CredentialsModal';
 import { ConfirmModal } from './ui/ConfirmModal';
 
@@ -31,6 +31,11 @@ export function Toolbar() {
   const [alertModal, setAlertModal] = useState<{ open: boolean; title: string; message: string }>({
     open: false, title: '', message: '',
   });
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Keep a stable ref so the keyboard listener never captures a stale closure
+  const handleSaveRef = useRef<() => void>(() => {});
+
   function showAlert(title: string, message: string) {
     setAlertModal({ open: true, title, message });
   }
@@ -41,13 +46,36 @@ export function Toolbar() {
       showAlert('Cannot save', 'Add at least one node to the canvas before saving.');
       return;
     }
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    setSaveStatus('saving');
     try {
       await save();
+      setSaveStatus('saved');
+      saveTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
     } catch (err) {
+      setSaveStatus('idle');
       const msg = err instanceof Error ? err.message : 'Unknown error';
       showAlert('Save failed', msg);
     }
   }
+
+  // Always keep ref pointing at the latest handleSave
+  handleSaveRef.current = handleSave;
+
+  // Ctrl+S / Cmd+S shortcut — registered once, reads latest state via ref
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        handleSaveRef.current();
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, []);
 
   async function handleTrigger() {
     if (!activeWorkflow || !activeWorkflow.id || activeWorkflow.id.startsWith('__new__')) return;
@@ -86,6 +114,25 @@ export function Toolbar() {
       onConfirm={() => setAlertModal(a => ({ ...a, open: false }))}
       onCancel={() => setAlertModal(a => ({ ...a, open: false }))}
     />
+    {/* ── Saving toast ── */}
+    <div
+      className={`fixed top-14 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-1.5 rounded-full shadow-xl text-xs font-semibold pointer-events-none select-none transition-all duration-300 ${
+        saveStatus === 'idle'
+          ? 'opacity-0 -translate-y-1.5 scale-95'
+          : 'opacity-100 translate-y-0 scale-100'
+      } ${
+        saveStatus === 'saving'
+          ? 'bg-slate-700 dark:bg-slate-600 text-white'
+          : 'bg-emerald-500 dark:bg-emerald-500 text-white'
+      }`}
+    >
+      {saveStatus === 'saving' ? (
+        <><Loader2 className="w-3 h-3 animate-spin" /><span>Saving…</span></>
+      ) : (
+        <><Check className="w-3 h-3" /><span>Saved</span></>
+      )}
+    </div>
+
     <header className="h-12 glass-surface border-b border-black/[0.07] dark:border-white/10 flex items-center px-4 gap-4 shrink-0">
       <div className="flex items-center gap-2">
         <img src="/logo.png" alt="Flux" className="w-6 h-6 rounded-md object-contain" />
