@@ -55,8 +55,9 @@ export class SlackAuthService {
         }
     }
 
-    /** Returns the Slack OAuth consent page URL requesting both bot and user scopes */
-    getAuthorizationUrl(): string {
+    /** Returns the Slack OAuth consent page URL requesting both bot and user scopes.
+     *  Pass `state` to round-trip data (e.g. userId) through the OAuth flow. */
+    getAuthorizationUrl(state?: string): string {
         this.assertConfigured();
         const clientId    = encodeURIComponent(process.env.SLACK_CLIENT_ID!);
         const redirectUri = encodeURIComponent(process.env.SLACK_REDIRECT_URI ?? getDefaultRedirectUri());
@@ -66,7 +67,8 @@ export class SlackAuthService {
             `?client_id=${clientId}` +
             `&scope=${SLACK_BOT_SCOPES}` +
             `&user_scope=${SLACK_USER_SCOPES}` +
-            `&redirect_uri=${redirectUri}`
+            `&redirect_uri=${redirectUri}` +
+            (state ? `&state=${encodeURIComponent(state)}` : '')
         );
     }
 
@@ -76,7 +78,7 @@ export class SlackAuthService {
      * performed on behalf of the connected user, not the bot).
      * The bot token is kept in the refreshToken field for fallback use.
      */
-    async handleCallback(code: string): Promise<{ teamName: string; userName: string }> {
+    async handleCallback(code: string, platformUserId?: string): Promise<{ teamName: string; userName: string }> {
         this.assertConfigured();
 
         const redirectUri = process.env.SLACK_REDIRECT_URI ?? getDefaultRedirectUri();
@@ -117,9 +119,9 @@ export class SlackAuthService {
         // Label format: "Workspace Name (user ID)" so the dropdown is human-readable
         const label = userToken ? `${teamName} (${userId})` : teamName;
 
-        // Upsert: same workspace + same user = update existing credential
+        // Upsert: same workspace + same slackUserId = update existing credential
         const upsertKey = userToken ? `${teamId}:${userId}` : teamId;
-        const existing = await this.credentialRepo.findAll();
+        const existing = await this.credentialRepo.findAllForUpsert(platformUserId);
         const match = existing.find((c) => c.provider === 'slack' && c.email === upsertKey);
 
         if (match) {
@@ -137,6 +139,7 @@ export class SlackAuthService {
                 refreshToken: botToken,
                 expiryDate:   0,
                 scopes:       SLACK_USER_SCOPES.split(','),
+                ...(platformUserId ? { userId: platformUserId } : {}),
             });
         }
 

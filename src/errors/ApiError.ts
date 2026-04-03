@@ -25,8 +25,8 @@ export const NotFoundError = (resource: string) =>
 export const BadRequestError = (message: string, details?: unknown) =>
     new ApiError(400, 'Bad Request', message, details);
 
-export const UnauthorizedError = () =>
-    new ApiError(401, 'Unauthorized', 'Missing API key. Provide it via x-api-key header.');
+export const UnauthorizedError = (message?: string) =>
+    new ApiError(401, 'Unauthorized', message ?? 'Missing API key. Provide it via x-api-key header.');
 
-export const ForbiddenError = () =>
-    new ApiError(403, 'Forbidden', 'Invalid API key.');
+export const ForbiddenError = (message?: string) =>
+    new ApiError(403, 'Forbidden', message ?? 'Invalid API key.');

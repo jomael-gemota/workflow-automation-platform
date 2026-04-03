@@ -152,9 +152,11 @@ export function deleteCredential(id: string) {
   });
 }
 
-/** Redirects the browser to Google's OAuth consent page */
-export function startGoogleOAuth() {
-  window.location.href = `${BASE}/oauth/google/authorize`;
+/** Redirects the browser to Google's OAuth consent page, carrying the platform userId so the
+ *  callback can scope the new credential to this user. */
+export function startGoogleOAuth(userId?: string) {
+  const qs = userId ? `?uid=${encodeURIComponent(userId)}` : '';
+  window.location.href = `${BASE}/oauth/google/authorize${qs}`;
 }
 
 /** Check whether Google OAuth is configured on the backend */
@@ -162,9 +164,10 @@ export function checkGoogleConfig() {
   return request<{ configured: boolean; redirectUri: string }>('/oauth/google/status');
 }
 
-/** Redirects the browser to Slack's OAuth consent page */
-export function startSlackOAuth() {
-  window.location.href = `${BASE}/oauth/slack/authorize`;
+/** Redirects the browser to Slack's OAuth consent page, carrying the platform userId. */
+export function startSlackOAuth(userId?: string) {
+  const qs = userId ? `?uid=${encodeURIComponent(userId)}` : '';
+  window.location.href = `${BASE}/oauth/slack/authorize${qs}`;
 }
 
 /** Check whether Slack OAuth is configured on the backend */
@@ -172,9 +175,10 @@ export function checkSlackConfig() {
   return request<{ configured: boolean; redirectUri: string }>('/oauth/slack/status');
 }
 
-/** Redirects the browser to Microsoft's OAuth consent page */
-export function startTeamsOAuth() {
-  window.location.href = `${BASE}/oauth/teams/authorize`;
+/** Redirects the browser to Microsoft's OAuth consent page, carrying the platform userId. */
+export function startTeamsOAuth(userId?: string) {
+  const qs = userId ? `?uid=${encodeURIComponent(userId)}` : '';
+  window.location.href = `${BASE}/oauth/teams/authorize${qs}`;
 }
 
 /** Check whether Teams OAuth is configured on the backend */
@@ -256,8 +260,9 @@ export function listTeamsUsers(credentialId: string) {
 
 // ── Basecamp data ──────────────────────────────────────
 
-export function startBasecampOAuth() {
-  window.location.href = `${BASE}/oauth/basecamp/authorize`;
+export function startBasecampOAuth(userId?: string) {
+  const qs = userId ? `?uid=${encodeURIComponent(userId)}` : '';
+  window.location.href = `${BASE}/oauth/basecamp/authorize${qs}`;
 }
 
 export function checkBasecampConfig() {

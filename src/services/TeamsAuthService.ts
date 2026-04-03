@@ -46,8 +46,9 @@ export class TeamsAuthService {
         }
     }
 
-    /** Returns the Microsoft identity platform OAuth consent page URL */
-    getAuthorizationUrl(): string {
+    /** Returns the Microsoft identity platform OAuth consent page URL.
+     *  Pass `state` to round-trip data (e.g. userId) through the OAuth flow. */
+    getAuthorizationUrl(state?: string): string {
         this.assertConfigured();
         const tenant      = getTenant();
         const clientId    = encodeURIComponent(process.env.TEAMS_CLIENT_ID!);
@@ -59,7 +60,8 @@ export class TeamsAuthService {
             `&response_type=code` +
             `&redirect_uri=${redirectUri}` +
             `&response_mode=query` +
-            `&scope=${scope}`
+            `&scope=${scope}` +
+            (state ? `&state=${encodeURIComponent(state)}` : '')
         );
     }
 
@@ -67,7 +69,7 @@ export class TeamsAuthService {
      * Exchange an authorization code for tokens, fetch the user's profile,
      * and upsert a Credential document.
      */
-    async handleCallback(code: string): Promise<{ displayName: string; email: string }> {
+    async handleCallback(code: string, platformUserId?: string): Promise<{ displayName: string; email: string }> {
         this.assertConfigured();
 
         const tenant      = getTenant();
@@ -121,8 +123,8 @@ export class TeamsAuthService {
 
         const label = displayName ? `${displayName} (${email})` : email;
 
-        // Upsert: same user ID = update existing credential
-        const existing = await this.credentialRepo.findAll();
+        // Upsert: same MS user ID = update existing credential
+        const existing = await this.credentialRepo.findAllForUpsert(platformUserId);
         const match = existing.find((c) => c.provider === 'teams' && c.email === userId);
 
         if (match) {
@@ -141,6 +143,7 @@ export class TeamsAuthService {
                 refreshToken,
                 expiryDate,
                 scopes:       TEAMS_SCOPES.split(' '),
+                ...(platformUserId ? { userId: platformUserId } : {}),
             });
         }
 

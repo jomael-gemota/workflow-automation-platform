@@ -51,13 +51,14 @@ export class GoogleAuthService {
         );
     }
 
-    /** Returns the Google consent page URL */
-    getAuthUrl(): string {
+    /** Returns the Google consent page URL. Pass `state` to round-trip data (e.g. userId). */
+    getAuthUrl(state?: string): string {
         const client = this.createOAuth2Client();
         return client.generateAuthUrl({
             access_type: 'offline',
             scope: SCOPES,
             prompt: 'consent',   // always show consent to guarantee refresh_token
+            ...(state ? { state } : {}),
         });
     }
 

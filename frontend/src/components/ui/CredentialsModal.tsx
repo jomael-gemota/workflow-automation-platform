@@ -6,6 +6,7 @@ import { startGoogleOAuth, checkGoogleConfig, startSlackOAuth, checkSlackConfig,
 import { ConfirmModal } from './ConfirmModal';
 import type { CredentialSummary } from '../../types/workflow';
 import { useQuery } from '@tanstack/react-query';
+import { useAuthStore } from '../../store/authStore';
 
 interface CredentialsModalProps {
   open: boolean;
@@ -21,6 +22,8 @@ const GOOGLE_SERVICE_LABELS: Record<string, string> = {
 };
 
 export function CredentialsModal({ open, onClose }: CredentialsModalProps) {
+  const { user } = useAuthStore();
+  const userId = user?.id ?? undefined;
   const { data: credentials = [], isLoading, refetch } = useCredentialList();
   const deleteCredential = useDeleteCredential();
   const { data: googleConfig } = useQuery({
@@ -158,7 +161,7 @@ export function CredentialsModal({ open, onClose }: CredentialsModalProps) {
               </div>
               {isGoogleConfigured ? (
                 <button
-                  onClick={startGoogleOAuth}
+                  onClick={() => startGoogleOAuth(userId)}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-medium rounded-lg transition-colors"
                 >
                   <Plus className="w-3 h-3" />
@@ -217,7 +220,7 @@ GOOGLE_REDIRECT_URI=http://localhost:3000/oauth/google/callback`}
               </div>
               {isSlackConfigured ? (
                 <button
-                  onClick={startSlackOAuth}
+                  onClick={() => startSlackOAuth(userId)}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-500 text-white text-[11px] font-medium rounded-lg transition-colors"
                 >
                   <Plus className="w-3 h-3" />
@@ -276,7 +279,7 @@ SLACK_REDIRECT_URI=http://localhost:3000/oauth/slack/callback`}
               </div>
               {isTeamsConfigured ? (
                 <button
-                  onClick={startTeamsOAuth}
+                  onClick={() => startTeamsOAuth(userId)}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-700 hover:bg-blue-600 text-white text-[11px] font-medium rounded-lg transition-colors"
                 >
                   <Plus className="w-3 h-3" />
@@ -336,7 +339,7 @@ TEAMS_REDIRECT_URI=http://localhost:3000/api/oauth/teams/callback`}
               </div>
               {isBasecampConfigured ? (
                 <button
-                  onClick={startBasecampOAuth}
+                  onClick={() => startBasecampOAuth(userId)}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-green-700 hover:bg-green-600 text-white text-[11px] font-medium rounded-lg transition-colors"
                 >
                   <Plus className="w-3 h-3" />

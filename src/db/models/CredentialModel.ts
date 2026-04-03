@@ -8,6 +8,8 @@ export interface CredentialDocument extends Document {
     refreshToken: string;
     expiryDate: number;   // Unix ms timestamp (0 for non-expiring tokens like Slack)
     scopes: string[];
+    /** MongoDB User ObjectId string — null for legacy / API-key-created credentials */
+    userId?: string;
 }
 
 const CredentialSchema = new Schema<CredentialDocument>(
@@ -19,6 +21,7 @@ const CredentialSchema = new Schema<CredentialDocument>(
         refreshToken: { type: String, required: true },
         expiryDate:   { type: Number, required: true },
         scopes: [{ type: String }],
+        userId: { type: String, index: true },  // sparse index; null for legacy credentials
     },
     { timestamps: true }
 );

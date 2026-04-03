@@ -32,7 +32,8 @@ export class BasecampAuthService {
         }
     }
 
-    getAuthorizationUrl(): string {
+    /** Pass `state` to round-trip data (e.g. userId) through the OAuth flow. */
+    getAuthorizationUrl(state?: string): string {
         this.assertConfigured();
         const clientId    = encodeURIComponent(process.env.BASECAMP_CLIENT_ID!);
         const redirectUri = encodeURIComponent(process.env.BASECAMP_REDIRECT_URI ?? getDefaultRedirectUri());
@@ -40,11 +41,12 @@ export class BasecampAuthService {
             `https://launchpad.37signals.com/authorization/new` +
             `?response_type=code` +
             `&client_id=${clientId}` +
-            `&redirect_uri=${redirectUri}`
+            `&redirect_uri=${redirectUri}` +
+            (state ? `&state=${encodeURIComponent(state)}` : '')
         );
     }
 
-    async handleCallback(code: string): Promise<{ name: string; email: string }> {
+    async handleCallback(code: string, platformUserId?: string): Promise<{ name: string; email: string }> {
         this.assertConfigured();
 
         const redirectUri = process.env.BASECAMP_REDIRECT_URI ?? getDefaultRedirectUri();
@@ -111,7 +113,7 @@ export class BasecampAuthService {
             : 'Basecamp User';
         const userEmail = identity?.email_address ?? '';
 
-        const existing = await this.credentialRepo.findAll();
+        const existing = await this.credentialRepo.findAllForUpsert(platformUserId);
 
         for (const bc3Account of bc3Accounts) {
             const accountId = String(bc3Account.id);
@@ -135,6 +137,7 @@ export class BasecampAuthService {
                     refreshToken,
                     expiryDate,
                     scopes:       [],
+                    ...(platformUserId ? { userId: platformUserId } : {}),
                 });
             }
         }

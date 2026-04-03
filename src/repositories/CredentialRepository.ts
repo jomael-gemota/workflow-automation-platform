@@ -26,13 +26,20 @@ export class CredentialRepository {
         refreshToken: string;
         expiryDate: number;
         scopes: string[];
+        userId?: string;
     }): Promise<CredentialDocument> {
         return CredentialModel.create(data);
     }
 
-    async findAll(): Promise<CredentialSummary[]> {
-        const docs = await CredentialModel.find().sort({ createdAt: -1 });
+    async findAll(userId?: string): Promise<CredentialSummary[]> {
+        const filter = userId ? { userId } : {};
+        const docs = await CredentialModel.find(filter).sort({ createdAt: -1 });
         return docs.map(this.toSummary);
+    }
+
+    /** Used internally by auth services for upsert checks — filtered by userId when provided */
+    async findAllForUpsert(userId?: string): Promise<CredentialSummary[]> {
+        return this.findAll(userId);
     }
 
     async findById(id: string): Promise<CredentialDocument | null> {
@@ -50,8 +57,10 @@ export class CredentialRepository {
         });
     }
 
-    async deleteById(id: string): Promise<boolean> {
-        const result = await CredentialModel.findByIdAndDelete(id);
+    async deleteById(id: string, userId?: string): Promise<boolean> {
+        const filter: Record<string, unknown> = { _id: id };
+        if (userId) filter.userId = userId;
+        const result = await CredentialModel.findOneAndDelete(filter);
         return result !== null;
     }
 
