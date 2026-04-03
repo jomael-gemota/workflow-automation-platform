@@ -146,7 +146,7 @@ function CategorySection({
       {/* Category header */}
       <button
         type="button"
-        onClick={() => setOpen((p) => !p)}
+        onClick={() => setOpen(!open)}
         className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-black/5 dark:hover:bg-white/5 transition-colors group"
       >
         <span className="text-[10px] font-semibold text-slate-400 dark:text-white/30 uppercase tracking-widest group-hover:text-slate-500 dark:group-hover:text-white/50 transition-colors">
@@ -266,7 +266,7 @@ export function NodePickerPopup({ onSelect, open: controlledOpen, onOpenChange }
       {/* ── Trigger button ───────────────────────────────────────────────── */}
       <button
         type="button"
-        onClick={() => setOpen((p) => !p)}
+        onClick={() => setOpen(!open)}
         title="Add a node"
         className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold shadow-lg transition-all duration-200 select-none border ${
           open
